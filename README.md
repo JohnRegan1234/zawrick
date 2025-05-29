@@ -1,12 +1,10 @@
 # Zawrick
 
-![Demo](demo.gif)
-
 A powerful browser extension that transforms web text into Anki flashcards with AI-powered question generation. Simply highlight any text on the web and instantly create high-quality flashcards for your studies.
 
 ## ✨ Features
 
-* **Quick Capture**: Select text > right-click > "Save selection to Anki" or use `Ctrl+Shift+A` / `⌘+Shift+A`
+* **Quick Capture**: Select text > right-click > "Save selection to Anki" or use `Ctrl+Shift+K` / `⌘+Shift+K`
 * **AI-Powered Generation**: Uses OpenAI GPT to automatically generate intelligent questions from your selected text
 * **System Default Prompts**: Built-in expert prompts for both basic cards and cloze deletions
 * **Custom Prompt Library**: Create and manage up to 5 custom prompts tailored to your learning style
@@ -30,7 +28,7 @@ A powerful browser extension that transforms web text into Anki flashcards with 
 
 3. **Create Cards**:
    - Highlight any text on a webpage
-   - Right-click and select "Save selection to Anki" or press `Ctrl+Shift+A` / `⌘+Shift+A`
+   - Right-click and select "Save selection to Anki" or press `Ctrl+Shift+K` / `⌘+Shift+K`
    - Review the generated question (if enabled) and save to Anki
 
 ## ⚙️ Configuration
@@ -52,7 +50,7 @@ A powerful browser extension that transforms web text into Anki flashcards with 
 ### Advanced Features
 - **Prompt History**: Review all AI-generated cards with full prompt details
 - **Offline Support**: Cards queue locally when Anki is unavailable
-- **Keyboard Shortcut**: Customizable hotkey (default: `Ctrl+Shift+A` / `⌘+Shift+A`)
+- **Keyboard Shortcut**: Customizable hotkey (default: `Ctrl+Shift+K` / `⌘+Shift+K`)
 
 ## 🎯 AI Prompt Examples
 
@@ -93,7 +91,7 @@ Smart cloze deletions preserve context while testing specific knowledge:
 
 ## 🎨 Credits
 
-Extension icon designed by [Freepik](https://www.freepik.com). [Original icon source](https://www.freepik.com/icon/abstract_720669)
+Extension icon designed by [Freepik](https://www.freepik.com).
 
 ---
 

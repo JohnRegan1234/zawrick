@@ -131,7 +131,7 @@ function initContextMenu(platform) {
   const mod = platform.os === "mac" ? "⌘" : "Ctrl";
   chrome.contextMenus.create({
     id: COMMAND_SAVE_TO_ANKI,
-    title: `Save selection to Anki (${mod}+Shift+A)`,
+    title: `Save selection to Anki (${mod}+Shift+K)`,
     contexts: ["selection"]
   });
 }

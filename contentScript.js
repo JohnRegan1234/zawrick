@@ -122,12 +122,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         </div>
 
         <div id="manual-button-row">
-        <button id="manual-enable-gpt-btn" class="manual-button-secondary">
-            <span style="font-size:1.1em"><b>Setup ChatGPT</b></span><br/>
-            <span class="muted-text" style="font-size:12px; margin-top:4px;">
-            to generate cards automatically!
-            </span>
-        </button>
         <button id="manual-save-btn" class="manual-button">
             <b>Save to Anki</b>
         </button>
@@ -181,12 +175,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 deckName : selectedDeck,
                 modelName: msg.modelName
             });
-            overlay.remove();
-        };
-
-        // 10) Enable GPT handler
-        box.querySelector("#manual-enable-gpt-btn").onclick = () => {
-            chrome.runtime.sendMessage({ action: "openPopup" });
             overlay.remove();
         };
 
@@ -249,7 +237,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 <button id="confirm-cancel" style="padding: 8px 16px; border: 1px solid #ccc; background: white; border-radius: 4px; cursor: pointer;">
                     Cancel
                 </button>
-                <button id="confirm-save" style="padding: 8px 16px; border: none; background: #007bff; color: white; border-radius: 4px; cursor: pointer;">
+                <button id="confirm-save" style="padding: 8px 16px; border: none, background: #007bff; color: white; border-radius: 4px; cursor: pointer;">
                     Save to Anki
                 </button>
             </div>
