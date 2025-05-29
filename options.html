@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>bronki</title>
+    <!-- Remove all <style> blocks and use only the external CSS file -->
+    <link rel="stylesheet" href="options.css">
+</head>
+
+<body>
+
+    <div class="header">
+        <img src="icons/icon64.png" alt="Zawrick Icon" />
+        <h1>Zawrick</h1>
+        <span class="version">v2.0</span>
+    </div>
+
+    <!-- Inline notification banner -->
+    <div id="notification" class="notification">Settings saved</div>
+
+    <!-- Status Bar -->
+    <div id="status-bar">
+        <div class="status-indicator"></div>
+        <span id="status-text"></span>
+        <button class="refresh-btn" id="refresh-status">↻</button>
+    </div>
+    <div class="help-box error" id="status-help">
+        Anki isn't running or <a href="https://ankiweb.net/shared/info/2055492159" class="link" target="_blank">
+            <a href="https://ankiweb.net/shared/info/2055492159" class="link styled-link" target="_blank">AnkiConnect</a> isn't enabled. Don't worry, new cards will be safe in your browser until Anki starts.<br />
+    </div>
+
+    <!-- Pending cards with tooltip -->
+    <div class="pending-cards">
+        <div class="muted-text" id="pending-summary">
+            <span id="pending-count" class="count">0</span> new cards pending sync to Anki
+        </div>
+    </div>
+
+    <div class="section" id="anki-section">
+        <div class="section-header">
+            <div>
+                <div class="section-title">⚙️ Anki Settings</div>
+                <div class="section-subtitle">Configure your Anki deck and note type</div>
+            </div>
+            <span class="section-toggle" tabindex="0" aria-label="Toggle section">▾</span>
+        </div>
+        <div class="section-body" id="anki-body">
+            <div class="form-group">
+                <label class="form-label" for="anki-deck">Deck to use</label>
+                <select id="anki-deck" class="form-select"></select>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="anki-note-type">Note Model to use</label>
+                <select id="anki-note-type" class="form-select"></select>
+            </div>
+        </div>
+    </div>
+
+    <!-- GPT Section -->
+    <div class="section" id="gpt-section">
+        <div class="section-header">
+            <div>
+                <div class="section-title">🤖 GPT Settings</div>
+                <div class="section-subtitle">Configure AI question generation</div>
+            </div>
+            <span class="section-toggle" tabindex="0" aria-label="Toggle section">▾</span>
+        </div>
+        <div class="section-body" id="gpt-body">
+            <div class="toggle-container">
+                <input type="checkbox" id="enable-gpt" style="display: none;">
+                <div class="toggle-switch">
+                    <div class="toggle-slider"></div>
+                </div>
+                <label for="enable-gpt" class="toggle-label">Enable GPT question generation</label>
+            </div>
+
+            <div class="toggle-container">
+                <input type="checkbox" id="always-confirm" style="display: none;">
+                <div class="toggle-switch">
+                    <div class="toggle-slider"></div>
+                </div>
+                <label for="always-confirm" class="toggle-label">Always review cards before saving</label>
+            </div>
+            <div class="help-text">When enabled, you can review and edit GPT-generated content before saving to Anki.</div>
+
+            <div class="form-group">
+                <label class="form-label" for="openai-key">OpenAI API Key</label>
+                <div class="input-wrapper">
+                    <input id="openai-key" type="password" class="form-input" placeholder="Paste your OpenAI key here"
+                        autocomplete="off" />
+                    <button type="button" class="input-addon" id="toggle-password" aria-label="Show/Hide API Key">👁️
+                    </button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="prompt-select">Saved Prompts</label>
+                <select id="prompt-select" class="form-select"></select>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="profile-name">Name</label>
+                <input id="profile-name" type="text" class="form-input" />
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="gpt-prompt">Template ({{text}}, {{title}}, {{url}})</label>
+                <textarea id="gpt-prompt" rows="4" class="form-textarea"></textarea>
+            </div>
+            <div id="prompt-limit-msg" class="muted-text">
+                You can keep up to five prompts.
+            </div>
+
+            <div class="btn-row">
+                <button id="add-prompt" class="btn btn-primary">Add Prompt</button>
+                <button id="del-prompt" class="btn btn-secondary">Delete Prompt</button>
+                <button id="save-prompt" class="btn btn-primary">Save Prompt</button>
+            </div>
+
+            <div class="muted-text centered-text">
+                We will use <i>gpt-3.5-turbo</i><br>
+                <a href="https://platform.openai.com/api-keys" class="link" target="_blank">Get an OpenAI API key</a>
+            </div>
+            <div class="btn-row">
+                <button id="test-api" class="btn btn-secondary">Test API</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Prompt History Section -->
+    <div class="section" id="history-section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">📋 Prompt History</div>
+          <div class="section-subtitle">View prompts used to generate cards</div>
+        </div>
+        <span class="section-toggle" tabindex="0" aria-label="Toggle section">▾</span>
+      </div>
+      <div class="section-body">
+        <div class="history-controls">
+          <button id="clear-history" class="btn btn-secondary">Clear History</button>
+          <span class="history-count" id="history-count"></span>
+        </div>
+        <div class="history-list" id="history-list">
+          <!-- Example entry structure -->
+          <div class="history-entry">
+            <div class="history-header">
+              <!-- ...header content... -->
+            </div>
+            <div class="history-details">
+              <div class="history-detail-row">
+                <div class="history-detail-label">Prompt:</div>
+                <!-- ...prompt content... -->
+              </div>
+              <!-- ...other detail rows... -->
+            </div>
+          </div>
+          <!-- ...repeat for each entry... -->
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <a href="https://github.com/zawrick/zawrick/issues" target="_blank" rel="noopener" class="footer-link">🐞 Report a bug</a>
+      <button type="button" id="reset-settings" class="footer-link">Reset settings</button>
+    </div>
+
+    <script src="options.js" defer></script>
+    <script src="options_ui.js" defer></script>
+</body>
+</html>
