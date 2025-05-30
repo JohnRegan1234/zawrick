@@ -13,7 +13,7 @@
     animation: fadeIn 0.25s ease forwards;
 }
 
-/* the white “card” container */
+/* the white "card" container */
 #manual-box {
     position: relative;
     background: #fff;
@@ -44,7 +44,7 @@
     border-radius: 6px;
     resize: vertical;
     font-family: var(--font, sans-serif);
-    margin-bottom: 16px;
+    margin-block-end: 16px;
     transition: border-color 0.2s ease;
 }
 
@@ -58,7 +58,7 @@
     display: flex;
     justify-content: center;
     gap: 8px;
-    margin-top: 16px;
+    margin-block-start: 16px;
 }
 
 /* error box in manual-prompt */
@@ -68,7 +68,7 @@
     color: var(--error, rgba(220, 53, 69, 0.4));
     padding: 8px 12px;
     border-radius: 6px;
-    margin-bottom: 12px;
+    margin-block-end: 12px;
     font-size: 13px;
     line-height: 1.4;
 }
@@ -98,7 +98,7 @@
 }
 
 #manual-back-preview {
-    margin-top: 12px;
+    margin-block-start: 12px;
     max-height: 150px;
     overflow-y: auto;
     background: rgba(242, 244, 248, 1);
@@ -107,12 +107,12 @@
     padding: 8px;
     font-size: 14px;
     line-height: 1.4;
-    margin-bottom: 20px;
+    margin-block-end: 20px;
 }
 
 #manual-back-preview .preview-label {
     font-weight: 500;
-    margin-bottom: 4px;
+    margin-block-end: 4px;
     display: block;
     color: var(--muted);
 }
@@ -143,10 +143,10 @@
 label {
     display: flex;
     flex-direction: column;
-    margin-bottom: var(--gap);
+    margin-block-end: var(--gap);
 }
 label span {
-    margin-bottom: 4px;
+    margin-block-end: 4px;
     font-size: 13px;
     color: var(--muted);
 }
@@ -166,7 +166,7 @@ select:focus {
 }
 
 
-/* primary “Save” button */
+/* primary "Save" button */
 .manual-button {
     background: var(--accent, #ff6600);
     color: #fff;
@@ -182,7 +182,7 @@ select:focus {
     background-color: #e55c00;
 }
 
-/* secondary “Enable GPT” button */
+/* secondary "Enable GPT" button */
 .manual-button-secondary {
     background: rgba(255, 255, 255, 0.8);
     color: var(--accent, #ff6600);

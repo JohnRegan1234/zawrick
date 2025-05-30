@@ -1,4 +1,5 @@
 let toastEl = null;
+let toastHideTimeout = null;
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // 1) Copy the selected text as HTML
@@ -291,6 +292,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // Toast notifications
     if (!msg.status) return;
 
+    // Clear any existing timeout to prevent race conditions
+    if (toastHideTimeout) {
+        clearTimeout(toastHideTimeout);
+        toastHideTimeout = null;
+    }
+
     if (!toastEl) {
         toastEl = document.createElement("div");
         Object.assign(toastEl.style, {
@@ -317,12 +324,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     toastEl.style.opacity = "1";
 
     if (msg.status === "success") {
-        setTimeout(() => {
-            toastEl.style.opacity = "0";
-            setTimeout(() => {
-                toastEl.remove();
-                toastEl = null;
-            }, 300);
+        toastHideTimeout = setTimeout(() => {
+            if (toastEl) {
+                toastEl.style.opacity = "0";
+                setTimeout(() => {
+                    if (toastEl) {
+                        toastEl.remove();
+                        toastEl = null;
+                    }
+                    toastHideTimeout = null;
+                }, 300);
+            }
         }, 1500);
     }
 });

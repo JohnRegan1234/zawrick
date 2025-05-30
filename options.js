@@ -151,6 +151,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const inputs = gptBody.querySelectorAll('input, select, textarea, button:not(.section-toggle)');
             gptBody.style.opacity = on ? '1' : '0.5';
             inputs.forEach(el => {
+                // Don't disable the enable GPT checkbox itself
+                if (el.id === 'enable-gpt') return;
                 el.disabled = !on;
             });
         }
@@ -362,20 +364,21 @@ document.addEventListener('DOMContentLoaded', () => {
             // Initialize GPT toggle
             if (enableGpt) {
                 enableGpt.checked = settings.gptEnabled;
-                syncToggleSwitch(enableGpt, gptToggleSwitch);
                 toggleGPTSection(settings.gptEnabled); // Set initial state
             }
             
-            // Initialize always confirm toggle
+            // Initialize always confirm toggle - no sync needed, checkbox handles state
             if (alwaysConfirm) {
                 alwaysConfirm.checked = settings.alwaysConfirm;
-                syncToggleSwitch(alwaysConfirm, alwaysConfirmToggleSwitch);
             }
             
             if (keyInput) keyInput.value  = settings.openaiKey;
             if (tplBox) tplBox.value = (settings.prompts.find(p => p.id === settings.selectedPrompt) || settings.prompts[0])?.template || '';
-            if (confirmGptEl) confirmGptEl.checked = settings.confirmGpt;
-            if (confirmGptEl && confirmToggleSwitch) syncToggleSwitch(confirmGptEl, confirmToggleSwitch);
+            
+            // Initialize confirm GPT toggle - no sync needed, checkbox handles state
+            if (confirmGptEl) {
+                confirmGptEl.checked = settings.confirmGpt;
+            }
 
             // Initialize section states using the newly defined toggleSection
             if (ankiBody && ankiToggle) toggleSection(ankiBody, ankiToggle, true); // Expand Anki
@@ -666,38 +669,23 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        if (enableGpt && gptToggleSwitch) {
+        if (enableGpt) {
             // Handle checkbox change
             enableGpt.addEventListener('change', () => {
-                syncToggleSwitch(enableGpt, gptToggleSwitch);
                 toggleGPTSection(enableGpt.checked);
                 saveSettings({gptEnabled: enableGpt.checked});
             });
-
-            // Handle visual switch click
-            gptToggleSwitch.addEventListener('click', () => {
-                enableGpt.checked = !enableGpt.checked;
-                enableGpt.dispatchEvent(new Event('change')); // Trigger the change handler
-            });
         }
 
-        if (alwaysConfirm && alwaysConfirmToggleSwitch) {
+        if (alwaysConfirm) {
             // Handle checkbox change
             alwaysConfirm.addEventListener('change', () => {
-                syncToggleSwitch(alwaysConfirm, alwaysConfirmToggleSwitch);
                 saveSettings({alwaysConfirm: alwaysConfirm.checked});
-            });
-
-            // Handle visual switch click
-            alwaysConfirmToggleSwitch.addEventListener('click', () => {
-                alwaysConfirm.checked = !alwaysConfirm.checked;
-                alwaysConfirm.dispatchEvent(new Event('change')); // Trigger the change handler
             });
         }
 
         if (confirmGptEl) {
             confirmGptEl.addEventListener('change', () => {
-                syncToggleSwitch(confirmGptEl, confirmToggleSwitch);
                 saveSettings({confirmGpt: confirmGptEl.checked});
             });
         }
@@ -820,18 +808,6 @@ function toggleSection(sectionBodyEl, sectionToggleIconEl, isExpanded) {
     }
     // The actual show/hide animation (e.g., max-height) is handled by CSS rules
     // based on the '.collapsed' class on 'sectionEl' and '.active' on 'sectionToggleIconEl'.
-}
-
-function syncToggleSwitch(checkboxEl, switchEl) {
-    if (!checkboxEl || !switchEl) return;
-    const container = switchEl.closest('.toggle-container');
-    if (checkboxEl.checked) {
-        switchEl.classList.add('active');
-        if (container) container.classList.add('active');
-    } else {
-        switchEl.classList.remove('active');
-        if (container) container.classList.remove('active');
-    }
 }
 
 // Update history toggle logic to match .history-entry-toggle
