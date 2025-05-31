@@ -85,7 +85,7 @@
 
 ## 🐞 Known Issues & Contributing
 
-- See [issues](https://github.com/zawrick/zawrick/issues) for current bugs and planned improvements.
+- See [issues](https://github.com/JohnRegan1234/zawrick/issues) for current bugs and planned improvements.
 - Contributions and suggestions are welcome! Please open an issue or pull request.
 
 ---

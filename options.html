@@ -125,22 +125,8 @@
                     <div class="form-group">
                         <div class="form-label-group">
                             <label class="form-label" for="gpt-prompt">Prompt Template</label>
-                            <button type="button" id="toggle-prompt-help" class="info-button" aria-expanded="false" aria-controls="prompt-help-content">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" class="info-icon">
-                                  <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
-                                </svg>
-                                <span class="sr-only">Show prompt formatting help</span>
-                            </button>
                         </div>
-                        <div id="prompt-help-content" class="collapsible-help" hidden>
-                            <div class="help-text">
-                                Use placeholders like <code class="template-var">{{text}}</code> (selected text),
-                                <code class="template-var">{{title}}</code> (page title), and
-                                <code class="template-var">{{url}}</code> (page URL) in your template.
-                                This allows the extension to dynamically insert the relevant information from the web page into your prompt.
-                            </div>
-                        </div>
-                        <textarea id="gpt-prompt" rows="4" class="form-textarea"></textarea>
+                        <textarea id="gpt-prompt" rows="4" class="form-textarea" placeholder="e.g. Use {{text}} for the selected text, {{title}} for the page title, and {{url}} for the page URL.&#10;Example: Write a question for the front of an Anki card based on {{text}} from {{title}} ({{url}})."></textarea>
                     </div>
                     <div id="prompt-limit-msg" class="muted-text">
                         You can keep up to five prompts.
@@ -152,10 +138,6 @@
                         <button id="save-prompt" class="btn btn-primary">Save Prompt</button>
                     </div>
 
-                    <div class="muted-text centered-text">
-                        We will use <i>gpt-3.5-turbo</i><br>
-                        <a href="https://platform.openai.com/api-keys" class="link" target="_blank">Get an OpenAI API key</a>
-                    </div>
                     <div class="btn-row">
                         <button id="test-api" class="btn btn-secondary">Test API</button>
                     </div>
@@ -177,15 +159,8 @@
         <div class="section-body">
           <div class="section-body-content">
             <div class="history-controls">
-                <div id="clear-history-action-area">
-                    <button id="clear-history-btn" class="btn btn-secondary">Clear History</button>
-                </div>
-                <div id="confirm-clear-history-area" style="display: none;">
-                    <span class="confirm-message">Are you sure? This cannot be undone.</span>
-                    <button id="confirm-clear-btn" class="btn btn-primary error">Yes, Clear All</button>
-                    <button id="cancel-clear-btn" class="btn btn-secondary">Cancel</button>
-                </div>
-                <span class="history-count" id="history-count"></span>
+              <button id="clear-history-btn" class="btn btn-secondary">Clear History</button>
+              <span class="history-count count-badge" id="history-count"></span>
             </div>
             <div class="history-list" id="history-list">
               <!-- Example entry structure -->
@@ -228,7 +203,7 @@
                     <div class="history-controls">
                         <button id="refresh-pdf-review-list-btn" class="btn btn-secondary">Refresh List</button>
                         <button id="clear-all-pdf-review-btn" class="btn btn-secondary error">Clear All Review Cards</button>
-                        <span class="history-count" id="pdf-review-count">0 cards for review</span>
+                        <span class="history-count count-badge" id="pdf-review-count">0 cards for review</span>
                     </div>
                     <p class="help-text" style="margin-bottom: var(--gap-sm);">
                         Note: PDF-sourced cards appear here for review if the global "Always review cards before saving" setting (in GPT Settings above) is enabled, or if automatic processing encountered an issue. If that setting is disabled and processing is successful, PDF cards are sent directly to Anki (or the sync queue) with a system notification.
@@ -241,8 +216,15 @@
         </div>
     </div>
 
+    <!-- Move the minimal GPT info block to just above the footer, single line, smaller font -->
+    <div class="gpt-info-minimal-inline">
+        <span class="gpt-model-pill-minimal-inline">gpt-3.5-turbo</span>
+        <span class="gpt-info-separator">|</span>
+        <a href="https://platform.openai.com/api-keys" class="gpt-key-link-minimal-inline" target="_blank">Get an OpenAI API key</a>
+    </div>
+
     <div class="footer">
-      <a href="https://github.com/zawrick/zawrick/issues" target="_blank" rel="noopener" class="footer-link">🐞 Report a bug</a>
+      <a href="https://github.com/JohnRegan1234/zawrick/issues" target="_blank" rel="noopener" class="footer-link">🐞 Report a bug</a>
       <button type="button" id="reset-settings" class="footer-link">Reset settings</button>
     </div>
 

@@ -41,6 +41,21 @@ document.addEventListener('DOMContentLoaded', () => {
         notificationTimeouts.set(notif, timeout);
     };
 
+    /**
+     * Briefly flashes a button green to indicate a successful action.
+     * @param {HTMLElement} buttonElement - The button HTML element to flash.
+     */
+    window.flashButtonGreen = function(buttonElement) {
+      if (!buttonElement || typeof buttonElement.classList === 'undefined') {
+        console.warn('[flashButtonGreen] Invalid button element provided:', buttonElement);
+        return;
+      }
+      buttonElement.classList.add('flash-success');
+      setTimeout(() => {
+        buttonElement.classList.remove('flash-success');
+      }, 1000); // Flash duration in milliseconds
+    };
+
     // UI connection status helper
     window.updateUIConnectionStatus = function(online) {
         const bar = document.getElementById('status-bar');
@@ -60,26 +75,4 @@ document.addEventListener('DOMContentLoaded', () => {
             statusTextEl.textContent = STATUS_TEXT.offline;
         }
     };
-
-    // Prompt Template Help Toggle
-    const togglePromptHelpButton = document.getElementById('toggle-prompt-help');
-    const promptHelpContent = document.getElementById('prompt-help-content');
-    if (togglePromptHelpButton && promptHelpContent) {
-        togglePromptHelpButton.addEventListener('click', () => {
-            const isExpanded = togglePromptHelpButton.getAttribute('aria-expanded') === 'true';
-            togglePromptHelpButton.setAttribute('aria-expanded', String(!isExpanded));
-            if (!isExpanded) {
-                promptHelpContent.hidden = false;
-                setTimeout(() => {
-                    promptHelpContent.classList.add('shown');
-                }, 10);
-            } else {
-                promptHelpContent.classList.remove('shown');
-                promptHelpContent.addEventListener('transitionend', function handler() {
-                    promptHelpContent.hidden = true;
-                    promptHelpContent.removeEventListener('transitionend', handler);
-                });
-            }
-        });
-    }
 });

@@ -305,7 +305,8 @@ async function handleAction(tab, info) {
   console.log('[Background][handleAction] tab object:', tab);
   // ...existing code...
   const settings = await getSettings();
-  console.log('[Background][handleAction] Loaded settings:', settings);
+  // Diagnostic: log settings
+  console.log('[Background][handleAction] Settings loaded:', JSON.stringify(settings, null, 2));
 
   // ...existing code...
 
@@ -421,8 +422,11 @@ async function handleAction(tab, info) {
       console.log('[Background][handleAction] GPT generated front:', front);
 
       // Store prompt history entry only on success
+      console.log('[Background][handleAction] Pre-history check. Settings.gptEnabled:', settings.gptEnabled, 'isValidOpenAiKey:', isValidOpenAiKey(settings.openaiKey), 'Generated front (first 50 chars):', front?.substring(0,50), 'IsCloze:', isCloze, 'ClozeText (first 50 chars):', clozeText?.substring(0,50));
+      console.log('[Background][handleAction] Condition (front && front.trim()) evaluates to:', (front && front.trim()));
       if (front && front.trim()) {
-        await storePromptHistory({
+        // Diagnostic: log data being prepared for storePromptHistory
+        const historyObj = {
           timestamp: Date.now(),
           promptId: historyPromptId,
           promptLabel: historyPromptLabel,
@@ -433,9 +437,10 @@ async function handleAction(tab, info) {
           pageUrl: pageUrl,
           modelName: settings.modelName,
           deckName: settings.deckName,
-          // --- Add clozeText for cloze cards ---
           generatedClozeText: isCloze ? clozeText : undefined
-        });
+        };
+        console.log('[Background][handleAction] CONDITIONS MET. Calling storePromptHistory for basic card. Data being prepared:', JSON.stringify(historyObj, null, 2));
+        await storePromptHistory(historyObj);
       }
     } catch (err) {
       console.error('[Background][handleAction] Front generation failed:', err);
@@ -677,6 +682,8 @@ function sendFrontInputRequest(tabId, backHtml, helper, err,
 
 // Store prompt history entry
 async function storePromptHistory(entry) {
+  // Diagnostic: log entry at start
+  console.log('[Background][storePromptHistory] CALLED. Entry to be saved:', JSON.stringify(entry, null, 2));
   try {
     let { promptHistory = [] } = await chrome.storage.local.get({ promptHistory: [] });
 
@@ -693,7 +700,8 @@ async function storePromptHistory(entry) {
 
     await chrome.storage.local.set({ promptHistory });
   } catch (err) {
-    console.warn("Failed to store prompt history:", err);
+    // Enhanced error logging
+    console.error("[Background][storePromptHistory] FAILED to store prompt history. Error:", err, "Attempted entry data:", JSON.stringify(entry, null, 2));
   }
 }
 
@@ -762,16 +770,53 @@ async function handlePdfSelection(info, tab) {
 
   // 3. Load settings and log
   const settings = await getSettings();
-  console.log('[handlePdfSelection] Settings loaded. GPT Enabled:', settings?.gptEnabled, 'Always Confirm:', settings?.alwaysConfirm, 'Model:', settings?.modelName, 'Deck:', settings?.deckName);
-  if (!settings) {
-    console.error('[handlePdfSelection] Critical: Failed to load settings.');
-    chrome.notifications.create('pdf_settings_error', {
-      type: 'basic',
-      iconUrl: 'icons/icon128.png',
-      title: 'Zawrick PDF Error',
-      message: 'Could not load extension settings. Card not created.'
-    });
-    return;
+  // Diagnostic: log settings
+  console.log('[Background][handlePdfSelection] Settings loaded:', JSON.stringify(settings, null, 2));
+
+  // --- Add robust logging before template selection logic ---
+  console.log('[Background][handlePdfSelection] --- Determining frontGenerationTemplate ---');
+  console.log('[Background][handlePdfSelection] Initial settings.selectedPrompt:', settings.selectedPrompt);
+  console.log('[Background][handlePdfSelection] Initial settings.prompts:', JSON.stringify(settings.prompts, null, 2));
+
+  let frontGenerationTemplate, historyPromptId, historyPromptLabel;
+
+  if (settings.selectedPrompt === 'system-default-basic') {
+    frontGenerationTemplate = SYSTEM_DEFAULT_BASIC_PROMPT_TEXT;
+    historyPromptId = 'system-default-basic';
+    historyPromptLabel = 'System Default - Basic Cards';
+  } else if (settings.selectedPrompt === 'system-default-cloze') {
+    frontGenerationTemplate = SYSTEM_DEFAULT_BASIC_PROMPT_TEXT;
+    historyPromptId = 'system-default-basic';
+    historyPromptLabel = 'System Default - Basic Cards';
+  } else {
+    const userSelectedProfile = (settings.prompts || []).find(p => p.id === settings.selectedPrompt);
+    if (userSelectedProfile) {
+      frontGenerationTemplate = userSelectedProfile.template;
+      historyPromptId = userSelectedProfile.id;
+      historyPromptLabel = userSelectedProfile.label;
+    } else if (settings.prompts && settings.prompts.length > 0) {
+      frontGenerationTemplate = settings.prompts[0].template;
+      historyPromptId = settings.prompts[0].id;
+      historyPromptLabel = settings.prompts[0].label;
+    } else {
+      frontGenerationTemplate = SYSTEM_DEFAULT_BASIC_PROMPT_TEXT;
+      historyPromptId = 'system-default-basic';
+      historyPromptLabel = 'System Default - Basic Cards';
+    }
+  }
+
+  // Log the state of frontGenerationTemplate AFTER the selection logic but BEFORE the safeguard
+  console.log('[Background][handlePdfSelection] Value of frontGenerationTemplate BEFORE safeguard (first 100 chars):', frontGenerationTemplate ? `"${frontGenerationTemplate.substring(0,100)}..."` : String(frontGenerationTemplate));
+  console.log('[Background][handlePdfSelection] Value of historyPromptId BEFORE safeguard:', historyPromptId);
+  console.log('[Background][handlePdfSelection] Value of historyPromptLabel BEFORE safeguard:', historyPromptLabel);
+
+  // CRITICAL SAFEGUARD:
+  if (!frontGenerationTemplate || typeof frontGenerationTemplate !== 'string' || frontGenerationTemplate.trim() === "") {
+      console.warn('[Background][handlePdfSelection] WARNING: frontGenerationTemplate was invalid or empty. Forcing to SYSTEM_DEFAULT_BASIC_PROMPT_TEXT. Original settings.selectedPrompt was:', settings.selectedPrompt);
+      frontGenerationTemplate = SYSTEM_DEFAULT_BASIC_PROMPT_TEXT;
+      historyPromptId = 'system-default-basic';
+      historyPromptLabel = 'System Default - Basic Cards';
+      console.log('[Background][handlePdfSelection] Safeguard applied. New frontGenerationTemplate (first 100 chars):', frontGenerationTemplate?.substring(0, 100));
   }
 
   // 4. Build backHtml (Cloze or Basic)
@@ -810,8 +855,6 @@ async function handlePdfSelection(info, tab) {
   // 5. Front generation (Basic card and GPT enabled)
   let front = "";
   let gptFailed = false;
-  let frontGenerationTemplate;
-  let historyPromptId, historyPromptLabel;
 
   if (settings.selectedPrompt === 'system-default-basic') {
     frontGenerationTemplate = SYSTEM_DEFAULT_BASIC_PROMPT_TEXT;
@@ -839,20 +882,23 @@ async function handlePdfSelection(info, tab) {
   }
 
   if (!isCloze && settings.gptEnabled && isValidOpenAiKey(settings.openaiKey)) {
-    console.log("[handlePdfSelection] Attempting GPT Front generation for PDF text (rawText passed as selection).");
+    // FINAL log before calling generateFrontWithRetry
+    console.log("[Background][handlePdfSelection] FINAL check before generateFrontWithRetry. _resolvedTemplateString will be (first 100 chars):", frontGenerationTemplate?.substring(0, 100));
     try {
       front = await generateFrontWithRetry(rawText, {
         pageTitle,
         pageUrl,
         openaiKey: settings.openaiKey,
         gptModel: settings.gptModel,
-        _resolvedTemplateString: frontGenerationTemplate
+        _resolvedTemplateString: frontGenerationTemplate // Always use the safeguarded value here
       });
-      console.log("[handlePdfSelection] GPT Front generation successful. Front:", front);
+      console.log('[Background][handlePdfSelection] GPT generated front:', front);
 
       // Store prompt history entry only on success
+      console.log('[Background][handlePdfSelection][Basic] Pre-history check. Settings.gptEnabled:', settings.gptEnabled, 'isValidOpenAiKey:', isValidOpenAiKey(settings.openaiKey), 'Generated front (first 50 chars):', front?.substring(0,50));
+      console.log('[Background][handlePdfSelection][Basic] Condition (front && front.trim()) evaluates to:', (front && front.trim()));
       if (front && front.trim()) {
-        await storePromptHistory({
+        const historyObj = {
           timestamp: Date.now(),
           promptId: historyPromptId,
           promptLabel: historyPromptLabel,
@@ -863,24 +909,20 @@ async function handlePdfSelection(info, tab) {
           pageUrl: pageUrl,
           modelName: settings.modelName,
           deckName: settings.deckName
-          // (no clozeText for basic)
-        });
+        };
+        console.log('[Background][handlePdfSelection][Basic] CONDITIONS MET. Calling storePromptHistory for PDF basic card. Data being prepared:', JSON.stringify(historyObj, null, 2));
+        await storePromptHistory(historyObj);
       }
       gptFailed = false;
     } catch (err) {
-      console.error("[handlePdfSelection] GPT Front generation failed:", err);
-      chrome.notifications.create('pdf_front_gpt_error', {
-        type: 'basic',
-        iconUrl: 'icons/icon128.png',
-        title: 'Zawrick PDF Error',
-        message: 'GPT Front generation failed: ' + err.message
-      });
+      // Diagnostic: log GPT failure and skip history
+      console.error('[Background][handlePdfSelection][Basic] GPT front generation FAILED. History will NOT be saved for this attempt. Error:', err);
       gptFailed = true;
       front = "";
     }
   } else if (isCloze && settings.gptEnabled && clozeText) {
-    // --- Store prompt history for cloze cards ---
-    await storePromptHistory({
+    // Diagnostic before storePromptHistory for cloze PDF
+    const historyObj = {
       timestamp: Date.now(),
       promptId: historyPromptId,
       promptLabel: historyPromptLabel,
@@ -892,7 +934,9 @@ async function handlePdfSelection(info, tab) {
       pageUrl: pageUrl,
       modelName: settings.modelName,
       deckName: settings.deckName
-    });
+    };
+    console.log('[Background][handlePdfSelection][Cloze] CONDITIONS MET. Calling storePromptHistory for PDF cloze card. ClozeText (first 50 chars):', clozeText?.substring(0,50), 'Data being prepared:', JSON.stringify(historyObj, null, 2));
+    await storePromptHistory(historyObj);
   }
 
   // 6. Determine if manual review is needed

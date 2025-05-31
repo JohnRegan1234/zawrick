@@ -398,42 +398,80 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Change prompt selection handler:
             promptSel.onchange = () => {
               const newSelectedId = promptSel.value;
-              // FIX: Treat DEFAULT_PROFILE as a user prompt (not system)
-              const isSystemPrompt = SYSTEM_PROMPTS.some(p => p.id === newSelectedId);
-              currentPromptId = newSelectedId; // Always update the currently displayed prompt
 
-              if (isSystemPrompt) {
-                // For system prompts, just update UI but don't save to selectedPrompt
-                const systemPrompt = SYSTEM_PROMPTS.find(p => p.id === newSelectedId);
-                updateUIForPromptType(systemPrompt, true);
-                renderSelect();
+              // Update the module-level variables that track current state
+              selectedPromptId = newSelectedId;
+              currentPromptId = newSelectedId;
+
+              const isSystem = SYSTEM_PROMPTS.some(p => p.id === newSelectedId);
+              let activePromptObject = null;
+
+              if (isSystem) {
+                activePromptObject = SYSTEM_PROMPTS.find(p => p.id === newSelectedId);
               } else {
-                // For user prompts (including DEFAULT_PROFILE), update selectedPrompt and save
-                selectedPromptId = newSelectedId;
-                // Find in prompts or use DEFAULT_PROFILE if matches
-                const userPrompt = prompts.find(p => p.id === selectedPromptId) ||
-                                   (selectedPromptId === DEFAULT_PROFILE.id ? DEFAULT_PROFILE : null);
-                saveSettings({ selectedPrompt: selectedPromptId }).then(() => {
-                  updateUIForPromptType(userPrompt, false);
-                  renderSelect();
-                });
+                activePromptObject = prompts.find(p => p.id === newSelectedId) ||
+                                     (newSelectedId === DEFAULT_PROFILE.id ? DEFAULT_PROFILE : null);
+              }
+
+              if (activePromptObject) {
+                // Persist the user's selection to storage
+                saveSettings({ selectedPrompt: newSelectedId })
+                  .then(() => {
+                    // Update the UI fields (name, template, button states) based on the selection
+                    updateUIForPromptType(activePromptObject, isSystem);
+                    // The select dropdown's value is already visually updated by the user's action.
+                    // No renderSelect() call here.
+                  })
+                  .catch(error => {
+                    console.error("Error saving selected prompt or updating UI:", error);
+                  });
+              } else {
+                console.error("Selected prompt ID not found:", newSelectedId);
+                // Optionally, handle this error, e.g., by reverting to a default or showing a notification.
               }
             };
 
+            // ----- State for staged prompt rename confirmation -----
+            let isConfirmingRename = false;
+            let originalProfileNameForCancel = null;
+            // let cancelRenameBtnElement = null; // Will be added in a later stage
+
             // Save profile name changes on blur or Enter (only for user prompts)
             profileNameInput.addEventListener('change', () => {
-                if (profileNameInput.disabled) return; // Skip if system prompt
-                
-                const p = prompts.find(p=>p.id===promptSel.value);
-                if (p) {
-                    if (confirm(`Rename "${p.label}" to "${profileNameInput.value}"?`)) {
-                        p.label = profileNameInput.value.trim() || `Profile ${prompts.length}`;
-                        saveSettings({ prompts }).then(renderSelect);
+                if (profileNameInput.disabled) return; // Skip if system prompt or already in confirmation
+
+                // If a rename confirmation is already active from a previous change,
+                // and the user edits the name again and blurs, we should probably
+                // continue with the new value for confirmation, but not reset the whole UI yet.
+                // For now, if isConfirmingRename is true, this event won't re-trigger the setup
+                // until the current confirmation is resolved or cancelled.
+                // A more advanced handling could update the target rename value.
+                // For this stage, we'll keep it simple: if already confirming, this blur won't re-setup.
+
+                const currentProfileId = promptSel.value;
+                const profile = prompts.find(p => p.id === currentProfileId);
+                const newName = profileNameInput.value.trim();
+
+                if (profile && newName && newName !== profile.label) {
+                    // Only set up for confirmation if not already in that state for THIS name change
+                    if (!isConfirmingRename || originalProfileNameForCancel !== profile.label) {
+                        isConfirmingRename = true;
+                        originalProfileNameForCancel = profile.label; // Store the original name before edit
+                        console.log(`[Options][Rename Stage 1] Rename confirmation initiated. Original: "${originalProfileNameForCancel}", New: "${newName}". Actual rename deferred.`);
+                        // In future stages, UI changes for confirmation (button text, cancel button) will go here.
+                        // The actual rename logic will be primarily in saveBtn.onclick when isConfirmingRename is true.
                     } else {
-                        profileNameInput.value = p.label; // revert
+                        console.log(`[Options][Rename Stage 1] Name changed again while already confirming rename for "${originalProfileNameForCancel}". New target name is now "${newName}".`);
                     }
+                } else if (profile && newName && newName === profile.label && isConfirmingRename && originalProfileNameForCancel === profile.label) {
+                    // User changed name, then changed it back to original before confirming
+                    console.log(`[Options][Rename Stage 1] Name reverted to original "${profile.label}" before confirmation. Resetting rename state.`);
+                    isConfirmingRename = false;
+                    originalProfileNameForCancel = null;
+                    // In future stages, UI changes to revert confirmation UI would go here.
                 }
             });
+
             profileNameInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     profileNameInput.blur();
@@ -449,7 +487,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const newLabel = getUniquePromptLabel(profileNameInput.value, prompts, p.id);
                 p.label = newLabel;
                 p.template = tplBox.value.trim();
-                saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(renderSelect);
+                saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                  renderSelect();
+                  window.flashButtonGreen(saveBtn); // <<< ADD THIS LINE
+                });
               }
             };
 
@@ -537,6 +578,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                   saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
                     renderSelect();
                     window.showUINotification('Prompt added');
+                    window.flashButtonGreen(addBtn); // <<< ADD THIS LINE
                   });
                 }
               });
@@ -559,941 +601,1188 @@ document.addEventListener('DOMContentLoaded', async () => {
                 renderSelect();
                 if (promptLimitMsg) promptLimitMsg.style.display = "none";
                 window.showUINotification('Prompt deleted');
+                window.flashButtonGreen(delBtn); // <<< ADD THIS LINE
               });
             };
 
-            tplBox.addEventListener('input', () => {
-              if (tplBox.disabled) return; // Skip if system prompt
-              
-              const p = prompts.find(p => p.id === promptSel.value);
-              if (p) {
-                p.template = tplBox.value;
-                saveSettings({ prompts });
-              }
-            });
+            // --- Prompt Modal UI ---
+            let promptModal = null;
+            function showPromptModal({mode = 'add', prompt = null, onSave = null}) {
+              // Remove any existing modal
+              if (promptModal) promptModal.remove();
 
-            // Custom Select for Anki Decks and Note Types
-    function setupCustomSelect(wrapperId, triggerId, selectedValueId, optionsId, originalSelectId, fetchFunction, saveSettingCallback, initialSettingValue) {
-        const wrapper = document.getElementById(wrapperId);
-        const trigger = document.getElementById(triggerId);
-        const selectedValueDisplay = document.getElementById(selectedValueId);
-        const optionsContainer = document.getElementById(optionsId);
-        const originalSelect = document.getElementById(originalSelectId);
-
-        if (!trigger || !selectedValueDisplay || !optionsContainer || !originalSelect) return;
-
-        let currentOptions = [];
-        let searchInput = null;
-
-        // --- Add search input ---
-        function renderSearchInput() {
-            let searchDiv = optionsContainer.querySelector('.custom-select-search');
-            if (!searchDiv) {
-                searchDiv = document.createElement('div');
-                searchDiv.className = 'custom-select-search';
-                searchInput = document.createElement('input');
-                searchInput.type = 'text';
-                searchInput.placeholder = 'Type to search...';
-                searchDiv.appendChild(searchInput);
-                optionsContainer.prepend(searchDiv);
-
-                searchInput.addEventListener('input', () => {
-                    renderOptions(searchInput.value);
-                });
-            }
-        }
-
-        function renderOptions(filter = "") {
-            // Remove all except the search input
-            Array.from(optionsContainer.children).forEach(child => {
-                if (!child.classList.contains('custom-select-search')) {
-                    optionsContainer.removeChild(child);
-                }
-            });
-            let filtered = currentOptions;
-            if (filter && filter.trim()) {
-                const f = filter.trim().toLowerCase();
-                filtered = currentOptions.filter(opt => opt.toLowerCase().includes(f));
-            }
-            if (filtered.length === 0) {
-                const noOpt = document.createElement('div');
-                noOpt.className = 'custom-select-option disabled';
-                noOpt.textContent = 'No options found';
-                optionsContainer.appendChild(noOpt);
-            } else {
-                filtered.forEach(name => {
-                    const optionElement = document.createElement('div');
-                    optionElement.classList.add('custom-select-option');
-                    optionElement.setAttribute('role', 'option');
-                    optionElement.dataset.value = name;
-                    optionElement.textContent = name;
-                    optionElement.tabIndex = -1;
-                    optionElement.addEventListener('click', () => {
-                        selectOption(name, optionElement);
-                    });
-                    // Highlight selected
-                    if (originalSelect.value === name) {
-                        optionElement.classList.add('selected');
-                    }
-                    optionsContainer.appendChild(optionElement);
-                });
-            }
-        }
-
-        async function populateOptions() {
-            try {
-                const names = await fetchFunction();
-                currentOptions = names;
-                optionsContainer.innerHTML = '';
-                renderSearchInput();
-                renderOptions();
-                // Set initial selected value
-                const currentSavedValue = initialSettingValue || (names.length > 0 ? names[0] : 'Select...');
-                selectOption(currentSavedValue, Array.from(optionsContainer.querySelectorAll('.custom-select-option')).find(opt => opt.dataset.value === currentSavedValue), false);
-            } catch (error) {
-                console.error('Error populating custom select:', error);
-                optionsContainer.innerHTML = '<div class="custom-select-option error">Error loading options</div>';
-                selectedValueDisplay.textContent = 'Error';
-            }
-        }
-
-        function selectOption(value, optionElement, doSave = true) {
-            selectedValueDisplay.textContent = value;
-            if (originalSelect) {
-                let opt = Array.from(originalSelect.options).find(o => o.value === value);
-                if (!opt) {
-                    opt = new Option(value, value);
-                    originalSelect.add(opt);
-                }
-                originalSelect.value = value;
-            }
-            optionsContainer.querySelectorAll('.custom-select-option.selected').forEach(opt => opt.classList.remove('selected'));
-            if (optionElement) {
-                optionElement.classList.add('selected');
-            }
-            if (doSave) {
-                saveSettingCallback(value);
-            }
-            closeDropdown();
-        }
-
-        function toggleDropdown() {
-            const isExpanded = trigger.getAttribute('aria-expanded') === 'true';
-            if (isExpanded) {
-                closeDropdown();
-            } else {
-                openDropdown();
-            }
-        }
-
-        function openDropdown() {
-            optionsContainer.style.display = 'block';
-            trigger.setAttribute('aria-expanded', 'true');
-            if (searchInput) {
-                searchInput.value = '';
-                searchInput.focus();
-                renderOptions();
-            }
-            const currentlySelected = selectedValueDisplay.textContent;
-            const optionToHighlight = Array.from(optionsContainer.querySelectorAll('.custom-select-option')).find(opt => opt.dataset.value === currentlySelected);
-            if (optionToHighlight) {
-                optionToHighlight.scrollIntoView({ block: 'nearest' });
-            }
-        }
-
-        function closeDropdown() {
-            optionsContainer.style.display = 'none';
-            trigger.setAttribute('aria-expanded', 'false');
-        }
-
-        trigger.addEventListener('click', toggleDropdown);
-
-        document.addEventListener('click', (event) => {
-            if (!wrapper.contains(event.target)) {
-                closeDropdown();
-            }
-        });
-
-        // Allow typing directly on the trigger to search
-        trigger.addEventListener('keydown', (e) => {
-            if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                openDropdown();
-                if (searchInput) {
-                    searchInput.value = e.key;
-                    searchInput.focus();
-                    searchInput.setSelectionRange(1, 1);
-                    renderOptions(searchInput.value);
-                }
-                e.preventDefault();
-            }
-        });
-
-        populateOptions();
-
-        return { refresh: populateOptions, select: selectOption };
-    }
-
-    // For Anki Decks
-    let ankiDeckCustomSelect, ankiNoteTypeCustomSelect;
-    ankiDeckCustomSelect = setupCustomSelect(
-        'anki-deck-custom-wrapper',
-        'anki-deck-custom-trigger',
-        'anki-deck-selected-value',
-        'anki-deck-options',
-        'anki-deck',
-        async () => fetchAnki('deckNames'),
-        (deckName) => saveSettings({ deckName: deckName }),
-        settings.deckName
-    );
-    ankiNoteTypeCustomSelect = setupCustomSelect(
-        'anki-note-type-custom-wrapper',
-        'anki-note-type-custom-trigger',
-        'anki-note-type-selected-value',
-        'anki-note-type-options',
-        'anki-note-type',
-        async () => fetchAnki('modelNames'),
-        (modelName) => saveSettings({ modelName: modelName }),
-        settings.modelName
-    );
-
-    // in refreshAnkiStatus, after updating deckSel...
-    if (ankiDeckCustomSelect && typeof ankiDeckCustomSelect.refresh === 'function') {
-        await ankiDeckCustomSelect.refresh();
-        ankiDeckCustomSelect.select(deckSel.value, null, false);
-    }
-    if (ankiNoteTypeCustomSelect && typeof ankiNoteTypeCustomSelect.refresh === 'function') {
-        await ankiNoteTypeCustomSelect.refresh();
-        ankiNoteTypeCustomSelect.select(modelSel.value, null, false);
-    }
-
-        };
-
-        // ----- Anki status -----
-        const refreshAnkiStatus = async ()=>{
-            if (!statusBar || !statusText || !statusHelp || !deckSel || !modelSel || !ankiBody) return;
-            try{
-                window.updateUIConnectionStatus(true);
-                statusHelp.style.display='none';
-
-                const {deckName,modelName} = await loadSettings();
-
-                const decks = await fetchAnki('deckNames');
-                deckSel.innerHTML='';
-                decks.forEach(d=>deckSel.add(new Option(d,d)));
-                deckSel.value = decks.includes(deckName)?deckName:decks[0];
-                if(deckSel.value!==deckName) await saveSettings({deckName:deckSel.value});
-
-                const models = await fetchAnki('modelNames');
-                modelSel.innerHTML='';
-                models.forEach(m=>modelSel.add(new Option(m,m)));
-                modelSel.value = models.includes(modelName)?modelName:models[0];
-                if(modelSel.value!==modelName) await saveSettings({modelName:modelSel.value});
-
-                // If no decks/models, disable dropdowns and show help
-                if (!decks.length || !models.length) {
-                    deckSel.disabled = true;
-                    modelSel.disabled = true;
-                    ankiBody.style.opacity = '0.6';
-                    statusHelp.style.display = 'block';
-                } else {
-                    deckSel.disabled = false;
-                    modelSel.disabled = false;
-                    ankiBody.style.opacity = '1';
-                }
-                toggleSection(ankiBody, ankiToggle,true);
-            }catch(err){
-                window.updateUIConnectionStatus(false);
-                if(err.message.includes('Failed to fetch')){
-                    statusHelp.style.display='block';
-                    deckSel.disabled=true;
-                    modelSel.disabled=true;
-                    ankiBody.style.opacity='0.6';
-                    toggleSection(ankiBody, ankiToggle,false);
-                }else{
-                    console.error('Anki connection error:',err);
-                    statusHelp.style.display='block';
-                    deckSel.disabled=true;
-                    modelSel.disabled=true;
-                    ankiBody.style.opacity='0.6';
-                    toggleSection(ankiBody, ankiToggle,false);
-                }
-            }
-        };
-
-        // ----- Prompt History -----
-        const refreshPromptHistory = async () => {
-          const { promptHistory = [] } = await chrome.storage.local.get({ promptHistory: [] });
-
-          if (!historyList || !historyCount) return;
-
-          historyCount.textContent = `${promptHistory.length} entries`;
-
-          if (promptHistory.length === 0) {
-            historyList.innerHTML = '<div style="text-align: center; color: var(--muted); padding: 20px;">No prompt history yet</div>';
-            return;
-          }
-
-          historyList.innerHTML = promptHistory.map((entry, index) => {
-            const date = new Date(entry.timestamp).toLocaleString();
-            const truncatedFront = entry.generatedFront?.length > 100
-              ? entry.generatedFront.substring(0, 100) + '...'
-              : entry.generatedFront;
-
-            // Removed inline onclick from .history-entry-header
-            return `
-              <div class="history-entry">
-                <div class="history-entry-header">
-                  <div>
-                    <div class="history-entry-title">${entry.promptLabel}</div>
-                    <div class="history-entry-meta">${date} • ${entry.pageTitle}</div>
+              promptModal = document.createElement('div');
+              promptModal.className = 'prompt-modal-backdrop';
+              promptModal.innerHTML = `
+                <div class="prompt-modal">
+                  <div class="prompt-modal-header">
+                    <span>${mode === 'add' ? 'Add New Prompt' : 'Edit Prompt'}</span>
+                    <button class="prompt-modal-close" title="Close">&times;</button>
                   </div>
-                  <span class="history-entry-toggle" id="history-toggle-${index}">▸</span>
-                </div>
-                <div class="history-entry-details" id="history-details-${index}">
-                  <div class="history-detail-row">
-                    <div class="history-detail-label">Generated Question:</div>
-                    <div class="history-detail-content history-generated-front">${truncatedFront || 'No front text generated'}</div>
-                  </div>
-                  <div class="history-detail-row">
-                    <div class="history-detail-label">Source Text:</div>
-                    <div class="history-detail-content history-source-text">${entry.sourceText}</div>
-                  </div>
-                  <div class="history-detail-row">
-                    <div class="history-detail-label">Page:</div>
-                    <div class="history-detail-content">
-                      <a href="${entry.pageUrl}" target="_blank" style="color: var(--accent);">${entry.pageTitle}</a>
-                    </div>
-                  </div>
-                  <div class="history-detail-row">
-                    <div class="history-detail-label">Deck/Model:</div>
-                    <div class="history-detail-content">${entry.deckName} / ${entry.modelName}</div>
-                  </div>
-                  <div class="history-detail-row">
-                    <div class="history-detail-label">Prompt Template:</div>
-                    <div class="history-detail-content">
-                      <div class="history-prompt-template">${entry.promptTemplate}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            `;
-          }).join('');
-
-          // Add event listeners to all .history-entry-header elements
-          const headers = historyList.querySelectorAll('.history-entry-header');
-          headers.forEach(header => {
-            header.addEventListener('click', function () {
-              const entry = header.closest('.history-entry');
-              if (!entry) return;
-              const details = entry.querySelector('.history-details');
-              if (!details) return;
-              const toggleIcon = header.querySelector('.history-entry-toggle');
-              details.classList.toggle('active');
-              if (toggleIcon) {
-                toggleIcon.classList.toggle('active');
-              }
-            });
-          });
-        };
-
-        // Global function for toggling history entries
-        window.toggleHistoryEntry = function(headerElem) {
-          // Find the parent .history-entry
-          const entry = headerElem.closest('.history-entry');
-          if (!entry) return;
-
-          // Find the details section inside this entry
-          const details = entry.querySelector('.history-details');
-          if (!details) return;
-
-          // Use .history-entry-toggle for the icon
-          const toggleIcon = headerElem.querySelector('.history-entry-toggle');
-
-          // Toggle 'active' class on details and icon
-          details.classList.toggle('active');
-          if (toggleIcon) {
-            toggleIcon.classList.toggle('active');
-          }
-        };
-
-        // ----- Validation -----
-        const validateApiKey = key => {
-          // More permissive validation for modern OpenAI keys
-          // Just check it starts with 'sk-' and has reasonable length
-          return key.startsWith('sk-') && key.length > 20;
-        };
-
-        // Ensure unique prompt label (no duplicates)
-        function getUniquePromptLabel(base, prompts, excludeId = null) {
-          let label = base.trim();
-          let suffix = 1;
-          const taken = new Set(prompts.filter(p => p.id !== excludeId).map(p => p.label));
-          while (taken.has(label)) {
-            label = `${base.trim()} (${suffix++})`;
-          }
-          return label;
-        }
-
-        // ----- Event listeners -----
-        // Replace refreshLink with refreshBtn
-        if (refreshBtn) {
-            refreshBtn.addEventListener('click', e => {
-                e.preventDefault();
-                refreshAnkiStatus();
-            });
-        }
-
-        if (deckSel) {
-            deckSel.addEventListener('change', () => {
-                saveSettings({deckName: deckSel.value});
-            });
-        }
-
-        if (modelSel) {
-            modelSel.addEventListener('change', () => {
-                saveSettings({modelName: modelSel.value});
-            });
-        }
-
-        if (enableGpt) {
-            // Handle checkbox change
-            enableGpt.addEventListener('change', () => {
-                toggleGPTSection(enableGpt.checked);
-                saveSettings({gptEnabled: enableGpt.checked});
-            });
-        }
-
-        if (alwaysConfirm) {
-            // Handle checkbox change
-            alwaysConfirm.addEventListener('change', () => {
-                saveSettings({alwaysConfirm: alwaysConfirm.checked});
-            });
-        }
-
-        if (confirmGptEl) {
-            confirmGptEl.addEventListener('change', () => {
-                saveSettings({confirmGpt: confirmGptEl.checked});
-            });
-        }
-
-        if (keyInput) {
-            keyInput.addEventListener('input', () => {
-                const key = keyInput.value.trim();
-                keyInput.classList.toggle('invalid', !validateApiKey(key));
-                saveSettings({openaiKey: key});
-            });
-        }
-
-        if (keyToggle) {
-            keyToggle.addEventListener('click', () => {
-                if (keyInput.type === 'password') {
-                    keyInput.type = 'text';
-                    keyToggle.textContent = '🙈';
-                } else {
-                    keyInput.type = 'password';
-                    keyToggle.textContent = '👁️';
-                }
-            });
-        }
-
-        if (testApiBtn) {
-            testApiBtn.addEventListener('click', async () => {
-                const key = keyInput.value.trim();
-                if (!validateApiKey(key)) {
-                    window.showUINotification('Invalid API key format', 'error');
-                    return;
-                }
-                testApiBtn.disabled = true;
-                testApiBtn.textContent = 'Testing…';
-                const {success, error} = await testOpenAI(key);
-                if (success) {
-                    window.showUINotification('API connection successful');
-                } else {
-                    window.showUINotification(error || 'API test failed', 'error');
-                }
-                testApiBtn.disabled = false;
-                testApiBtn.textContent = 'Test';
-            });
-        }
-
-        // --- Section toggling for all .section-header elements ---
-        document.querySelectorAll('.section-header').forEach(header => {
-            header.addEventListener('click', function (e) {
-                // Prevent toggling if the click was on a button or input inside the header
-                if (e.target.closest('button, input, select, label, a')) return;
-                const section = header.closest('.section');
-                if (!section) return;
-                const toggleIcon = header.querySelector('.section-toggle');
-                const body = section.querySelector('.section-body');
-                const collapsed = section.classList.toggle('collapsed');
-                if (toggleIcon) toggleIcon.classList.toggle('active', !collapsed);
-                if (body) {
-                    // Optionally animate or set max-height, but class handles most
-                    body.style.display = collapsed ? '' : '';
-                }
-            });
-        });
-
-        if (resetBtn) {
-            resetBtn.addEventListener('click', async () => {
-                if (confirm('Are you sure you want to reset all settings?')) {
-                    await chrome.storage.sync.clear();
-                    await chrome.storage.local.clear();
-                    location.reload();
-                }
-            });
-        }
-
-        // Inline Clear History Confirmation UI
-        const clearHistoryBtn = document.getElementById('clear-history-btn');
-        const confirmClearHistoryArea = document.getElementById('confirm-clear-history-area');
-        const clearHistoryActionArea = document.getElementById('clear-history-action-area');
-        const confirmClearBtn = document.getElementById('confirm-clear-btn');
-        const cancelClearBtn = document.getElementById('cancel-clear-btn');
-
-        if (clearHistoryBtn && confirmClearHistoryArea && clearHistoryActionArea && confirmClearBtn && cancelClearBtn) {
-            clearHistoryBtn.addEventListener('click', () => {
-                clearHistoryActionArea.style.display = 'none';
-                confirmClearHistoryArea.style.display = 'flex';
-            });
-
-            cancelClearBtn.addEventListener('click', () => {
-                confirmClearHistoryArea.style.display = 'none';
-                clearHistoryActionArea.style.display = 'block';
-            });
-
-            confirmClearBtn.addEventListener('click', async () => {
-                await chrome.storage.local.set({ promptHistory: [] });
-                await refreshPromptHistory();
-                window.showUINotification('Prompt history cleared');
-                confirmClearHistoryArea.style.display = 'none';
-                clearHistoryActionArea.style.display = 'block';
-            });
-        }
-
-        // ----- Hotkey Customization -----
-        // Remove all hotkey customization logic and UI references
-        // (currentHotkeyDisplay, recordHotkeyBtn, resetHotkeyBtn, hotkeyInstructions, displayHotkeyPreference, etc.)
-
-        // Initialize UI
-        await initializeUI();
-    }
-});
-
-// Helper function for section toggling
-function toggleSection(body, toggle, expand) {
-    if (!body || !toggle) return;
-    const section = body.closest('.section');
-    if (!section) return;
-    
-    if (expand) {
-        section.classList.remove('collapsed');
-        toggle.classList.add('active');
-    } else {
-        section.classList.add('collapsed');
-        toggle.classList.remove('active');
-    }
-}
-
-// ----- PDF Review Section Element References -----
-const pdfReviewSection = document.getElementById('pdf-review-section');
-const pdfReviewToggle = pdfReviewSection?.querySelector('.section-toggle');
-const pdfReviewBody = pdfReviewSection?.querySelector('.section-body');
-const pdfReviewCount = document.getElementById('pdf-review-count');
-const pdfReviewList = document.getElementById('pdf-review-list');
-const refreshPdfReviewListBtn = document.getElementById('refresh-pdf-review-list-btn');
-const clearAllPdfReviewBtn = document.getElementById('clear-all-pdf-review-btn');
-
-// ----- PDF Review List Rendering -----
-let pdfReviewCardsCache = []; // Keep a local cache for event handlers
-
-async function renderPdfReviewList() {
-    console.log('[options.js] Rendering PDF review list...');
-    try {
-        const { pendingReviewPdfCards = [] } = await chrome.storage.local.get({ pendingReviewPdfCards: [] });
-        const cards = Array.isArray(pendingReviewPdfCards) ? pendingReviewPdfCards : [];
-        pdfReviewCardsCache = cards; // update cache
-        if (pdfReviewCount) {
-            pdfReviewCount.textContent = `${cards.length} card${cards.length === 1 ? '' : 's'} for review`;
-        }
-        if (!pdfReviewList) return;
-        if (cards.length === 0) {
-            pdfReviewList.innerHTML = `<div style="text-align: center; color: var(--muted); padding: 20px;">No PDF cards awaiting review.</div>`;
-            return;
-        }
-        pdfReviewList.innerHTML = cards.map(card => {
-            const date = new Date(card.timestamp).toLocaleString();
-            const snippet = card.generatedFront?.trim()
-                ? card.generatedFront.substring(0, 100)
-                : (card.sourceText?.substring(0, 100) || '');
-            // Deck and Model are displayed as plain, non-editable text
-            return `
-            <div class="history-entry" data-card-id="${card.id}">
-                <div class="history-entry-header">
-                    <div>
-                        <div class="history-entry-title">${card.originalPageTitle || 'Untitled PDF'}</div>
-                        <div class="history-entry-meta">${date}</div>
-                    </div>
-                    <span class="history-entry-toggle">▸</span>
-                </div>
-                <div class="history-details" style="display:none;"></div>
-                <div class="history-detail-row">
-                    <div class="history-detail-label">Snippet:</div>
-                    <div class="history-detail-content">${snippet || '<i>No preview</i>'}</div>
-                </div>
-                <div class="history-detail-row">
-                    <div class="history-detail-label">Deck:</div>
-                    <div class="history-detail-content"><span>${card.originalDeckName}</span></div>
-                </div>
-                <div class="history-detail-row">
-                    <div class="history-detail-label">Model:</div>
-                    <div class="history-detail-content"><span>${card.originalModelName}</span></div>
-                </div>
-                <div class="btn-row" style="margin-top: 10px;">
-                    <button class="btn btn-secondary edit-pdf-card-btn" data-card-id="${card.id}">Edit/View</button>
-                    <button class="btn btn-primary save-pdf-card-btn" data-card-id="${card.id}">Save to Anki</button>
-                    <button class="btn btn-secondary error delete-pdf-card-btn" data-card-id="${card.id}">Delete</button>
-                </div>
-            </div>
-            `;
-        }).join('');
-        console.log('[options.js] PDF review list rendered.');
-    } catch (err) {
-        console.error('[options.js] Error rendering PDF review list:', err);
-        if (pdfReviewList) {
-            pdfReviewList.innerHTML = `<div style="text-align: center; color: var(--error); padding: 20px;">Error loading PDF review cards.</div>`;
-        }
-    }
-}
-
-// Refresh PDF review list button
-if (refreshPdfReviewListBtn) {
-    refreshPdfReviewListBtn.addEventListener('click', () => {
-        renderPdfReviewList();
-    });
-}
-
-// Clear All PDF review cards button
-if (clearAllPdfReviewBtn) {
-    // Add confirmation UI like clear history
-    let confirmClearPdfArea = null;
-    let clearPdfActionArea = null;
-    let confirmClearPdfBtn = null;
-    let cancelClearPdfBtn = null;
-
-    // Setup confirmation UI if not already present
-    function setupPdfClearConfirmUI() {
-        // Only set up once
-        if (document.getElementById('confirm-clear-pdf-area')) return;
-
-        // Create confirmation area
-        confirmClearPdfArea = document.createElement('div');
-        confirmClearPdfArea.id = 'confirm-clear-pdf-area';
-        confirmClearPdfArea.style.display = 'none';
-        confirmClearPdfArea.style.alignItems = 'center';
-        confirmClearPdfArea.style.gap = '8px';
-
-        const confirmMsg = document.createElement('span');
-        confirmMsg.className = 'confirm-message';
-        confirmMsg.textContent = 'Are you sure? This cannot be undone.';
-
-        confirmClearPdfBtn = document.createElement('button');
-        confirmClearPdfBtn.className = 'btn btn-primary error';
-        confirmClearPdfBtn.textContent = 'Yes, Clear All';
-
-        cancelClearPdfBtn = document.createElement('button');
-        cancelClearPdfBtn.className = 'btn btn-secondary';
-        cancelClearPdfBtn.textContent = 'Cancel';
-
-        confirmClearPdfArea.appendChild(confirmMsg);
-        confirmClearPdfArea.appendChild(confirmClearPdfBtn);
-        confirmClearPdfArea.appendChild(cancelClearPdfBtn);
-
-        // Insert after the action area
-        clearPdfActionArea = clearAllPdfReviewBtn.parentNode;
-        clearPdfActionArea.parentNode.insertBefore(confirmClearPdfArea, clearPdfActionArea.nextSibling);
-
-        // Handlers
-        cancelClearPdfBtn.addEventListener('click', () => {
-            confirmClearPdfArea.style.display = 'none';
-            clearPdfActionArea.style.display = '';
-        });
-
-        confirmClearPdfBtn.addEventListener('click', async () => {
-            try {
-                await chrome.storage.local.set({ pendingReviewPdfCards: [] });
-                await renderPdfReviewList();
-                window.showUINotification('All PDF review cards cleared.');
-            } catch (err) {
-                console.error('[PDF Review] Error clearing all PDF review cards:', err);
-                window.showUINotification('Failed to clear PDF review cards.', 'error');
-            }
-            confirmClearPdfArea.style.display = 'none';
-            clearPdfActionArea.style.display = '';
-        });
-    }
-
-    setupPdfClearConfirmUI();
-
-    clearAllPdfReviewBtn.addEventListener('click', () => {
-        // Hide the action area, show confirmation
-        if (!confirmClearPdfArea) setupPdfClearConfirmUI();
-        clearPdfActionArea = clearAllPdfReviewBtn.parentNode;
-        clearPdfActionArea.style.display = 'none';
-        confirmClearPdfArea.style.display = 'flex';
-    });
-}
-
-// Event delegation for PDF review card buttons
-if (pdfReviewList) {
-    pdfReviewList.addEventListener('click', async (e) => {
-        const target = e.target;
-        if (!target) return;
-        const cardId = target.getAttribute('data-card-id');
-        if (!cardId) return;
-
-        // Find the card data from cache
-        const card = pdfReviewCardsCache.find(c => c.id === cardId);
-        if (!card) {
-            console.warn('[options.js] Card not found in cache for ID:', cardId);
-            return;
-        }
-
-        // Edit/View functionality with editing UI
-        if (target.classList.contains('edit-pdf-card-btn')) {
-            const entry = target.closest('.history-entry');
-            if (!entry) return;
-            const details = entry.querySelector('.history-details');
-            if (!details) return;
-
-            // If already editing, hide and reset
-            if (details.getAttribute('data-editing') === 'true') {
-                details.innerHTML = '';
-                details.style.display = 'none';
-                details.removeAttribute('data-editing');
-                target.textContent = 'Edit/View';
-                return;
-            }
-
-            // Build editing UI (Deck/Model as read-only text)
-            const isCloze = !!card.isCloze;
-            const frontVal = card.generatedFront || (isCloze ? '' : card.sourceText || '');
-            const backVal = isCloze ? (card.generatedClozeText || '') : (card.sourceText || '');
-            details.innerHTML = `
-                <div style="margin-bottom:8px;">
-                    <label><b>Front:</b>
-                        <textarea class="pdf-edit-front" style="width:100%;min-height:60px;padding:6px;border-radius:4px;margin-top:4px;">${frontVal}</textarea>
+                  <div class="prompt-modal-body">
+                    <label>
+                      <span>Prompt Name:</span>
+                      <input type="text" class="prompt-modal-name" value="${prompt?.label || ''}" maxlength="60" />
                     </label>
-                </div>
-                <div style="margin-bottom:8px;">
-                    <label><b>Back (${isCloze ? 'Cloze' : 'Basic'}):</b>
-                        <textarea class="pdf-edit-back" style="width:100%;min-height:80px;padding:6px;border-radius:4px;margin-top:4px;">${backVal}</textarea>
+                    <label>
+                      <span>Prompt Template:</span>
+                      <textarea class="prompt-modal-template" rows="6" maxlength="2000">${prompt?.template || ''}</textarea>
                     </label>
+                  </div>
+                  <div class="prompt-modal-footer">
+                    <button class="btn btn-primary prompt-modal-save">${mode === 'add' ? 'Add Prompt' : 'Save Changes'}</button>
+                    <button class="btn prompt-modal-cancel">Cancel</button>
+                  </div>
                 </div>
-                <div style="margin-bottom:8px;">
-                    <b>Deck:</b> <span>${card.originalDeckName}</span>
-                    &nbsp;&nbsp;
-                    <b>Model:</b> <span>${card.originalModelName}</span>
-                </div>
-                <div style="margin-bottom:8px;">
-                    <b>Source:</b> ${card.originalPageTitle}
-                    ${card.originalPageUrl ? `<br><a href="${card.originalPageUrl}" target="_blank">${card.originalPageUrl}</a>` : ''}
-                </div>
-                <div class="btn-row" style="margin-top:10px;">
-                    <button class="btn btn-primary done-edit-pdf-card-btn" data-card-id="${card.id}">Done Editing</button>
-                    <button class="btn btn-secondary cancel-edit-pdf-card-btn" data-card-id="${card.id}">Cancel Edit</button>
-                </div>
-            `;
-            details.style.display = 'block';
-            details.setAttribute('data-editing', 'true');
-            target.textContent = 'Hide Details';
+              `;
+              document.body.appendChild(promptModal);
 
-            // Done Editing handler
-            details.querySelector('.done-edit-pdf-card-btn').onclick = async function(ev) {
-                const cardId = this.getAttribute('data-card-id');
-                const frontVal = details.querySelector('.pdf-edit-front')?.value || '';
-                const backVal = details.querySelector('.pdf-edit-back')?.value || '';
-                console.log('[PDF Review][Edit] Done Editing card ID:', cardId, 'New Front:', frontVal, 'New Back:', backVal);
+              // Focus name input
+              const nameInput = promptModal.querySelector('.prompt-modal-name');
+              if (nameInput) nameInput.focus();
 
-                try {
-                    const { pendingReviewPdfCards = [] } = await chrome.storage.local.get({ pendingReviewPdfCards: [] });
-                    console.log('[PDF Review][Edit] Cards before update:', pendingReviewPdfCards.map(c => ({id: c.id, generatedFront: c.generatedFront, generatedClozeText: c.generatedClozeText, sourceText: c.sourceText})));
-                    const idx = pendingReviewPdfCards.findIndex(c => c.id === cardId);
-                    if (idx !== -1) {
-                        const cardToEdit = pendingReviewPdfCards[idx];
-                        console.log('[PDF Review][Edit] Found card to edit:', cardToEdit);
-                        if (cardToEdit.isCloze) {
-                            cardToEdit.generatedClozeText = backVal;
-                            cardToEdit.generatedFront = frontVal;
-                            console.log('[PDF Review][Edit] Updated Cloze card:', cardToEdit);
-                        } else {
-                            cardToEdit.generatedFront = frontVal;
-                            cardToEdit.sourceText = backVal;
-                            console.log('[PDF Review][Edit] Updated Basic card:', cardToEdit);
-                        }
-                        // Save updated array
-                        await chrome.storage.local.set({ pendingReviewPdfCards });
-                        console.log('[PDF Review][Edit] Saved updated pendingReviewPdfCards to storage.');
-                        // Update local cache
-                        pdfReviewCardsCache = pendingReviewPdfCards;
-                        console.log('[PDF Review][Edit] Updated pdfReviewCardsCache.');
-                    } else {
-                        console.warn('[PDF Review][Edit] Card ID not found in pendingReviewPdfCards:', cardId);
-                    }
-                } catch (err) {
-                    console.error('[PDF Review][Edit] Error saving edits for card ID:', cardId, err);
-                    window.showUINotification('Failed to save edits locally.', 'error');
-                    return;
+              // Close modal
+              function closeModal() {
+                if (promptModal) {
+                  promptModal.remove();
+                  promptModal = null;
                 }
+              }
+              promptModal.querySelector('.prompt-modal-close').onclick = closeModal;
+              promptModal.querySelector('.prompt-modal-cancel').onclick = closeModal;
+              promptModal.addEventListener('click', (e) => {
+                if (e.target === promptModal) closeModal();
+              });
 
-                details.style.display = 'none';
-                details.removeAttribute('data-editing');
-                target.textContent = 'Edit/View';
-                await renderPdfReviewList();
-                window.showUINotification('Edits staged locally. Click "Save to Anki" to send.');
-            };
+              // Save handler
+              promptModal.querySelector('.prompt-modal-save').onclick = () => {
+                const label = nameInput.value.trim();
+                const template = promptModal.querySelector('.prompt-modal-template').value.trim();
+                if (!label) {
+                  window.showUINotification('Prompt name required', 'error');
+                  nameInput.focus();
+                  return;
+                }
+                if (!template) {
+                  window.showUINotification('Prompt template required', 'error');
+                  return;
+                }
+                if (onSave) onSave({label, template});
+                closeModal();
+              };
+            }
 
-            // Cancel Edit handler
-            details.querySelector('.cancel-edit-pdf-card-btn').onclick = function(ev) {
-                details.innerHTML = '';
-                details.style.display = 'none';
-                details.removeAttribute('data-editing');
-                target.textContent = 'Edit/View';
-                console.log('[options.js] Cancelled editing PDF card ID:', cardId);
-            };
-
-            console.log('[options.js] Editing/Viewing PDF card ID:', cardId, card);
-            return;
-        }
-
-        // Save to Anki functionality (uses edited values if present)
-        if (target.classList.contains('save-pdf-card-btn')) {
-            const cardId = target.getAttribute('data-card-id');
-            // Always get the latest card object from the cache (should have edits if staged)
-            const cardToSave = pdfReviewCardsCache.find(c => c.id === cardId);
-            if (!cardToSave) {
-                window.showUINotification("Card not found in review queue.", 'error');
-                console.error('[PDF Review][Save] Card not found in cache for ID:', cardId);
+            addBtn.onclick = () => {
+              if (prompts.length >= 5) {
+                window.showUINotification("Limit reached (5 user prompts). Delete one first.", 'error');
+                addBtn.disabled = true;
+                if (promptLimitMsg) promptLimitMsg.style.display = "block";
                 return;
-            }
-
-            let frontVal, backVal, deckVal, modelVal;
-            if (cardToSave.isCloze) {
-                frontVal = cardToSave.generatedFront || '';
-                backVal = cardToSave.generatedClozeText || '';
-            } else {
-                frontVal = cardToSave.generatedFront || '';
-                backVal = cardToSave.sourceText || '';
-            }
-            deckVal = cardToSave.originalDeckName;
-            modelVal = cardToSave.originalModelName;
-
-            const cardDataForSave = {
-                front: frontVal,
-                backHtml: backVal,
-                deckName: deckVal,
-                modelName: modelVal
+              }
+              showPromptModal({
+                mode: 'add',
+                onSave: ({label, template}) => {
+                  const id = uid();
+                  const uniqueLabel = getUniquePromptLabel(label, prompts);
+                  prompts.push({ id, label: uniqueLabel, template });
+                  selectedPromptId = id;
+                  saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                    renderSelect();
+                    window.showUINotification('Prompt added');
+                    window.flashButtonGreen(addBtn); // <<< ADD THIS LINE
+                  });
+                }
+              });
             };
 
-            console.log('[PDF Review][SaveOptimistic] Initiating save for card ID:', cardId, 'Data:', cardDataForSave);
-
-            // Optimistic UI update: remove from storage and UI immediately
-            (async () => {
-                try {
-                    const { pendingReviewPdfCards = [] } = await chrome.storage.local.get({ pendingReviewPdfCards: [] });
-                    const updatedCards = pendingReviewPdfCards.filter(c => c.id !== cardId);
-                    await chrome.storage.local.set({ pendingReviewPdfCards: updatedCards });
-                    pdfReviewCardsCache = updatedCards;
-                    console.log('[PDF Review][SaveOptimistic] Card removed from local storage and cache for card ID:', cardId);
-                    await renderPdfReviewList();
-                    window.showUINotification('Card sent for Anki processing. System notification will confirm outcome.');
-                } catch (err) {
-                    console.error('[PDF Review][SaveOptimistic] Error removing card from local storage for card ID:', cardId, err);
-                    window.showUINotification('Failed to update review queue after sending card.', 'error');
-                }
-            })();
-
-            // Send to background for actual processing (response is only for logging)
-            chrome.runtime.sendMessage({ action: "saveFinalizedPdfCard", cardData: cardDataForSave }, (response) => {
-                console.log('[PDF Review][SaveOptimistic][Callback] Received response from background for card ID:', cardId, 'Raw Response:', response, 'Last Error:', chrome.runtime.lastError);
-                if (chrome.runtime.lastError) {
-                    // Only show UI notification if the error is NOT the "port closed" error
-                    if (chrome.runtime.lastError.message !== "The message port closed before a response was received.") {
-                        window.showUINotification('Communication error with background: ' + chrome.runtime.lastError.message, 'error');
-                    }
-                    // Always log for debugging
-                    console.error('[PDF Review][SaveOptimistic][Callback] Error from sendMessage. Card ID:', cardId, 'Error:', chrome.runtime.lastError.message);
-                } else if (response && !response.success) {
-                    console.error('[PDF Review][SaveOptimistic][Callback] Background reported failure. Card ID:', cardId, 'Response Error:', response.error);
-                    window.showUINotification('Background reported an issue processing the card: ' + response.error, 'error');
-                } else if (response && response.success) {
-                    console.log('[PDF Review][SaveOptimistic][Callback] Background successfully processed card ID:', cardId);
-                    // UI was already updated optimistically, so this is mostly for logging or any minor follow-up.
-                }
-            });
-            return;
-        }
-
-        // Delete PDF review card with two-click confirmation
-        if (target.classList.contains('delete-pdf-card-btn')) {
-            // If already in confirm-delete state, proceed with deletion
-            if (target.classList.contains('confirm-delete-active')) {
-                console.log('[PDF Review][Delete] Confirming delete for card ID:', cardId);
-                target.textContent = 'Delete';
-                target.classList.remove('confirm-delete-active');
-                target.removeAttribute('data-confirm-delete-timestamp');
-                try {
-                    const { pendingReviewPdfCards = [] } = await chrome.storage.local.get({ pendingReviewPdfCards: [] });
-                    console.log('[PDF Review][Delete] Cards before filtering:', pendingReviewPdfCards.map(c => c.id));
-                    const updatedCardsArray = pendingReviewPdfCards.filter(c => c.id !== cardId);
-                    console.log('[PDF Review][Delete] Filtering out card ID:', cardId);
-                    console.log('[PDF Review][Delete] Cards after filtering:', updatedCardsArray.map(c => c.id));
-                    await chrome.storage.local.set({ pendingReviewPdfCards: updatedCardsArray });
-                    console.log('[PDF Review][Delete] Storage updated after deletion.');
-                    await renderPdfReviewList();
-                    console.log('[PDF Review][Delete] List re-rendered after deletion.');
-                    window.showUINotification('PDF review card deleted.');
-                } catch (err) {
-                    console.error('[PDF Review][Delete] Error deleting card ID:', cardId, err);
-                    window.showUINotification('Failed to delete PDF review card.', 'error');
-                }
+            // Remove prompt: select from dropdown, then confirm
+            delBtn.onclick = () => {
+              // Only allow removing user prompts (not system or default)
+              const idx = prompts.findIndex(p => p.id === promptSel.value);
+              if (idx === -1) {
+                window.showUINotification('Select a user prompt to remove.', 'error');
                 return;
-            }
+              }
+              const promptToRemove = prompts[idx];
+              if (!confirm(`Are you sure you want to delete the prompt "${promptToRemove.label}"? This cannot be undone.`)) return;
+              prompts.splice(idx, 1);
+              const newId = prompts.length > 0 ? prompts[0].id : DEFAULT_PROFILE.id;
+              selectedPromptId = newId;
+              saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                renderSelect();
+                if (promptLimitMsg) promptLimitMsg.style.display = "none";
+                window.showUINotification('Prompt deleted');
+                window.flashButtonGreen(delBtn); // <<< ADD THIS LINE
+              });
+            };
 
-            // Reset any other confirm-delete-active buttons
-            const allDeleteBtns = pdfReviewList.querySelectorAll('.delete-pdf-card-btn.confirm-delete-active');
-            allDeleteBtns.forEach(btn => {
-                if (btn !== target) {
-                    btn.textContent = 'Delete';
-                    btn.classList.remove('confirm-delete-active');
-                    btn.removeAttribute('data-confirm-delete-timestamp');
+            // --- Prompt Modal UI ---
+            let promptModal = null;
+            function showPromptModal({mode = 'add', prompt = null, onSave = null}) {
+              // Remove any existing modal
+              if (promptModal) promptModal.remove();
+
+              promptModal = document.createElement('div');
+              promptModal.className = 'prompt-modal-backdrop';
+              promptModal.innerHTML = `
+                <div class="prompt-modal">
+                  <div class="prompt-modal-header">
+                    <span>${mode === 'add' ? 'Add New Prompt' : 'Edit Prompt'}</span>
+                    <button class="prompt-modal-close" title="Close">&times;</button>
+                  </div>
+                  <div class="prompt-modal-body">
+                    <label>
+                      <span>Prompt Name:</span>
+                      <input type="text" class="prompt-modal-name" value="${prompt?.label || ''}" maxlength="60" />
+                    </label>
+                    <label>
+                      <span>Prompt Template:</span>
+                      <textarea class="prompt-modal-template" rows="6" maxlength="2000">${prompt?.template || ''}</textarea>
+                    </label>
+                  </div>
+                  <div class="prompt-modal-footer">
+                    <button class="btn btn-primary prompt-modal-save">${mode === 'add' ? 'Add Prompt' : 'Save Changes'}</button>
+                    <button class="btn prompt-modal-cancel">Cancel</button>
+                  </div>
+                </div>
+              `;
+              document.body.appendChild(promptModal);
+
+              // Focus name input
+              const nameInput = promptModal.querySelector('.prompt-modal-name');
+              if (nameInput) nameInput.focus();
+
+              // Close modal
+              function closeModal() {
+                if (promptModal) {
+                  promptModal.remove();
+                  promptModal = null;
                 }
-            });
+              }
+              promptModal.querySelector('.prompt-modal-close').onclick = closeModal;
+              promptModal.querySelector('.prompt-modal-cancel').onclick = closeModal;
+              promptModal.addEventListener('click', (e) => {
+                if (e.target === promptModal) closeModal();
+              });
 
-            // Set this button to confirm-delete state
-            target.textContent = 'Confirm Delete?';
-            target.classList.add('confirm-delete-active');
-            target.setAttribute('data-confirm-delete-timestamp', Date.now());
-            console.log('[PDF Review][Delete] Staging delete for card ID:', cardId, 'Button text changed.');
-            return;
-        }
-
-        // ...existing code...
-    });
-
-    // Global click handler to reset confirm-delete state if clicking outside delete buttons
-    document.addEventListener('click', (event) => {
-        // Only reset if click is outside any .delete-pdf-card-btn inside pdfReviewList
-        if (!pdfReviewList.contains(event.target) || !event.target.classList.contains('delete-pdf-card-btn')) {
-            const allDeleteBtns = pdfReviewList.querySelectorAll('.delete-pdf-card-btn.confirm-delete-active');
-            allDeleteBtns.forEach(btn => {
-                btn.textContent = 'Delete';
-                btn.classList.remove('confirm-delete-active');
-                btn.removeAttribute('data-confirm-delete-timestamp');
-            });
-            if (allDeleteBtns.length > 0) {
-                console.log('[PDF Review][Delete] Clicked outside, resetting confirm-delete states.');
+              // Save handler
+              promptModal.querySelector('.prompt-modal-save').onclick = () => {
+                const label = nameInput.value.trim();
+                const template = promptModal.querySelector('.prompt-modal-template').value.trim();
+                if (!label) {
+                  window.showUINotification('Prompt name required', 'error');
+                  nameInput.focus();
+                  return;
+                }
+                if (!template) {
+                  window.showUINotification('Prompt template required', 'error');
+                  return;
+                }
+                if (onSave) onSave({label, template});
+                closeModal();
+              };
             }
-        }
-    });
-}
+
+            addBtn.onclick = () => {
+              if (prompts.length >= 5) {
+                window.showUINotification("Limit reached (5 user prompts). Delete one first.", 'error');
+                addBtn.disabled = true;
+                if (promptLimitMsg) promptLimitMsg.style.display = "block";
+                return;
+              }
+              showPromptModal({
+                mode: 'add',
+                onSave: ({label, template}) => {
+                  const id = uid();
+                  const uniqueLabel = getUniquePromptLabel(label, prompts);
+                  prompts.push({ id, label: uniqueLabel, template });
+                  selectedPromptId = id;
+                  saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                    renderSelect();
+                    window.showUINotification('Prompt added');
+                    window.flashButtonGreen(addBtn); // <<< ADD THIS LINE
+                  });
+                }
+              });
+            };
+
+            // Remove prompt: select from dropdown, then confirm
+            delBtn.onclick = () => {
+              // Only allow removing user prompts (not system or default)
+              const idx = prompts.findIndex(p => p.id === promptSel.value);
+              if (idx === -1) {
+                window.showUINotification('Select a user prompt to remove.', 'error');
+                return;
+              }
+              const promptToRemove = prompts[idx];
+              if (!confirm(`Are you sure you want to delete the prompt "${promptToRemove.label}"? This cannot be undone.`)) return;
+              prompts.splice(idx, 1);
+              const newId = prompts.length > 0 ? prompts[0].id : DEFAULT_PROFILE.id;
+              selectedPromptId = newId;
+              saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                renderSelect();
+                if (promptLimitMsg) promptLimitMsg.style.display = "none";
+                window.showUINotification('Prompt deleted');
+                window.flashButtonGreen(delBtn); // <<< ADD THIS LINE
+              });
+            };
+
+            // --- Prompt Modal UI ---
+            let promptModal = null;
+            function showPromptModal({mode = 'add', prompt = null, onSave = null}) {
+              // Remove any existing modal
+              if (promptModal) promptModal.remove();
+
+              promptModal = document.createElement('div');
+              promptModal.className = 'prompt-modal-backdrop';
+              promptModal.innerHTML = `
+                <div class="prompt-modal">
+                  <div class="prompt-modal-header">
+                    <span>${mode === 'add' ? 'Add New Prompt' : 'Edit Prompt'}</span>
+                    <button class="prompt-modal-close" title="Close">&times;</button>
+                  </div>
+                  <div class="prompt-modal-body">
+                    <label>
+                      <span>Prompt Name:</span>
+                      <input type="text" class="prompt-modal-name" value="${prompt?.label || ''}" maxlength="60" />
+                    </label>
+                    <label>
+                      <span>Prompt Template:</span>
+                      <textarea class="prompt-modal-template" rows="6" maxlength="2000">${prompt?.template || ''}</textarea>
+                    </label>
+                  </div>
+                  <div class="prompt-modal-footer">
+                    <button class="btn btn-primary prompt-modal-save">${mode === 'add' ? 'Add Prompt' : 'Save Changes'}</button>
+                    <button class="btn prompt-modal-cancel">Cancel</button>
+                  </div>
+                </div>
+              `;
+              document.body.appendChild(promptModal);
+
+              // Focus name input
+              const nameInput = promptModal.querySelector('.prompt-modal-name');
+              if (nameInput) nameInput.focus();
+
+              // Close modal
+              function closeModal() {
+                if (promptModal) {
+                  promptModal.remove();
+                  promptModal = null;
+                }
+              }
+              promptModal.querySelector('.prompt-modal-close').onclick = closeModal;
+              promptModal.querySelector('.prompt-modal-cancel').onclick = closeModal;
+              promptModal.addEventListener('click', (e) => {
+                if (e.target === promptModal) closeModal();
+              });
+
+              // Save handler
+              promptModal.querySelector('.prompt-modal-save').onclick = () => {
+                const label = nameInput.value.trim();
+                const template = promptModal.querySelector('.prompt-modal-template').value.trim();
+                if (!label) {
+                  window.showUINotification('Prompt name required', 'error');
+                  nameInput.focus();
+                  return;
+                }
+                if (!template) {
+                  window.showUINotification('Prompt template required', 'error');
+                  return;
+                }
+                if (onSave) onSave({label, template});
+                closeModal();
+              };
+            }
+
+            addBtn.onclick = () => {
+              if (prompts.length >= 5) {
+                window.showUINotification("Limit reached (5 user prompts). Delete one first.", 'error');
+                addBtn.disabled = true;
+                if (promptLimitMsg) promptLimitMsg.style.display = "block";
+                return;
+              }
+              showPromptModal({
+                mode: 'add',
+                onSave: ({label, template}) => {
+                  const id = uid();
+                  const uniqueLabel = getUniquePromptLabel(label, prompts);
+                  prompts.push({ id, label: uniqueLabel, template });
+                  selectedPromptId = id;
+                  saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                    renderSelect();
+                    window.showUINotification('Prompt added');
+                    window.flashButtonGreen(addBtn); // <<< ADD THIS LINE
+                  });
+                }
+              });
+            };
+
+            // Remove prompt: select from dropdown, then confirm
+            delBtn.onclick = () => {
+              // Only allow removing user prompts (not system or default)
+              const idx = prompts.findIndex(p => p.id === promptSel.value);
+              if (idx === -1) {
+                window.showUINotification('Select a user prompt to remove.', 'error');
+                return;
+              }
+              const promptToRemove = prompts[idx];
+              if (!confirm(`Are you sure you want to delete the prompt "${promptToRemove.label}"? This cannot be undone.`)) return;
+              prompts.splice(idx, 1);
+              const newId = prompts.length > 0 ? prompts[0].id : DEFAULT_PROFILE.id;
+              selectedPromptId = newId;
+              saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                renderSelect();
+                if (promptLimitMsg) promptLimitMsg.style.display = "none";
+                window.showUINotification('Prompt deleted');
+                window.flashButtonGreen(delBtn); // <<< ADD THIS LINE
+              });
+            };
+
+            // --- Prompt Modal UI ---
+            let promptModal = null;
+            function showPromptModal({mode = 'add', prompt = null, onSave = null}) {
+              // Remove any existing modal
+              if (promptModal) promptModal.remove();
+
+              promptModal = document.createElement('div');
+              promptModal.className = 'prompt-modal-backdrop';
+              promptModal.innerHTML = `
+                <div class="prompt-modal">
+                  <div class="prompt-modal-header">
+                    <span>${mode === 'add' ? 'Add New Prompt' : 'Edit Prompt'}</span>
+                    <button class="prompt-modal-close" title="Close">&times;</button>
+                  </div>
+                  <div class="prompt-modal-body">
+                    <label>
+                      <span>Prompt Name:</span>
+                      <input type="text" class="prompt-modal-name" value="${prompt?.label || ''}" maxlength="60" />
+                    </label>
+                    <label>
+                      <span>Prompt Template:</span>
+                      <textarea class="prompt-modal-template" rows="6" maxlength="2000">${prompt?.template || ''}</textarea>
+                    </label>
+                  </div>
+                  <div class="prompt-modal-footer">
+                    <button class="btn btn-primary prompt-modal-save">${mode === 'add' ? 'Add Prompt' : 'Save Changes'}</button>
+                    <button class="btn prompt-modal-cancel">Cancel</button>
+                  </div>
+                </div>
+              `;
+              document.body.appendChild(promptModal);
+
+              // Focus name input
+              const nameInput = promptModal.querySelector('.prompt-modal-name');
+              if (nameInput) nameInput.focus();
+
+              // Close modal
+              function closeModal() {
+                if (promptModal) {
+                  promptModal.remove();
+                  promptModal = null;
+                }
+              }
+              promptModal.querySelector('.prompt-modal-close').onclick = closeModal;
+              promptModal.querySelector('.prompt-modal-cancel').onclick = closeModal;
+              promptModal.addEventListener('click', (e) => {
+                if (e.target === promptModal) closeModal();
+              });
+
+              // Save handler
+              promptModal.querySelector('.prompt-modal-save').onclick = () => {
+                const label = nameInput.value.trim();
+                const template = promptModal.querySelector('.prompt-modal-template').value.trim();
+                if (!label) {
+                  window.showUINotification('Prompt name required', 'error');
+                  nameInput.focus();
+                  return;
+                }
+                if (!template) {
+                  window.showUINotification('Prompt template required', 'error');
+                  return;
+                }
+                if (onSave) onSave({label, template});
+                closeModal();
+              };
+            }
+
+            addBtn.onclick = () => {
+              if (prompts.length >= 5) {
+                window.showUINotification("Limit reached (5 user prompts). Delete one first.", 'error');
+                addBtn.disabled = true;
+                if (promptLimitMsg) promptLimitMsg.style.display = "block";
+                return;
+              }
+              showPromptModal({
+                mode: 'add',
+                onSave: ({label, template}) => {
+                  const id = uid();
+                  const uniqueLabel = getUniquePromptLabel(label, prompts);
+                  prompts.push({ id, label: uniqueLabel, template });
+                  selectedPromptId = id;
+                  saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                    renderSelect();
+                    window.showUINotification('Prompt added');
+                    window.flashButtonGreen(addBtn); // <<< ADD THIS LINE
+                  });
+                }
+              });
+            };
+
+            // Remove prompt: select from dropdown, then confirm
+            delBtn.onclick = () => {
+              // Only allow removing user prompts (not system or default)
+              const idx = prompts.findIndex(p => p.id === promptSel.value);
+              if (idx === -1) {
+                window.showUINotification('Select a user prompt to remove.', 'error');
+                return;
+              }
+              const promptToRemove = prompts[idx];
+              if (!confirm(`Are you sure you want to delete the prompt "${promptToRemove.label}"? This cannot be undone.`)) return;
+              prompts.splice(idx, 1);
+              const newId = prompts.length > 0 ? prompts[0].id : DEFAULT_PROFILE.id;
+              selectedPromptId = newId;
+              saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                renderSelect();
+                if (promptLimitMsg) promptLimitMsg.style.display = "none";
+                window.showUINotification('Prompt deleted');
+                window.flashButtonGreen(delBtn); // <<< ADD THIS LINE
+              });
+            };
+
+            // --- Prompt Modal UI ---
+            let promptModal = null;
+            function showPromptModal({mode = 'add', prompt = null, onSave = null}) {
+              // Remove any existing modal
+              if (promptModal) promptModal.remove();
+
+              promptModal = document.createElement('div');
+              promptModal.className = 'prompt-modal-backdrop';
+              promptModal.innerHTML = `
+                <div class="prompt-modal">
+                  <div class="prompt-modal-header">
+                    <span>${mode === 'add' ? 'Add New Prompt' : 'Edit Prompt'}</span>
+                    <button class="prompt-modal-close" title="Close">&times;</button>
+                  </div>
+                  <div class="prompt-modal-body">
+                    <label>
+                      <span>Prompt Name:</span>
+                      <input type="text" class="prompt-modal-name" value="${prompt?.label || ''}" maxlength="60" />
+                    </label>
+                    <label>
+                      <span>Prompt Template:</span>
+                      <textarea class="prompt-modal-template" rows="6" maxlength="2000">${prompt?.template || ''}</textarea>
+                    </label>
+                  </div>
+                  <div class="prompt-modal-footer">
+                    <button class="btn btn-primary prompt-modal-save">${mode === 'add' ? 'Add Prompt' : 'Save Changes'}</button>
+                    <button class="btn prompt-modal-cancel">Cancel</button>
+                  </div>
+                </div>
+              `;
+              document.body.appendChild(promptModal);
+
+              // Focus name input
+              const nameInput = promptModal.querySelector('.prompt-modal-name');
+              if (nameInput) nameInput.focus();
+
+              // Close modal
+              function closeModal() {
+                if (promptModal) {
+                  promptModal.remove();
+                  promptModal = null;
+                }
+              }
+              promptModal.querySelector('.prompt-modal-close').onclick = closeModal;
+              promptModal.querySelector('.prompt-modal-cancel').onclick = closeModal;
+              promptModal.addEventListener('click', (e) => {
+                if (e.target === promptModal) closeModal();
+              });
+
+              // Save handler
+              promptModal.querySelector('.prompt-modal-save').onclick = () => {
+                const label = nameInput.value.trim();
+                const template = promptModal.querySelector('.prompt-modal-template').value.trim();
+                if (!label) {
+                  window.showUINotification('Prompt name required', 'error');
+                  nameInput.focus();
+                  return;
+                }
+                if (!template) {
+                  window.showUINotification('Prompt template required', 'error');
+                  return;
+                }
+                if (onSave) onSave({label, template});
+                closeModal();
+              };
+            }
+
+            addBtn.onclick = () => {
+              if (prompts.length >= 5) {
+                window.showUINotification("Limit reached (5 user prompts). Delete one first.", 'error');
+                addBtn.disabled = true;
+                if (promptLimitMsg) promptLimitMsg.style.display = "block";
+                return;
+              }
+              showPromptModal({
+                mode: 'add',
+                onSave: ({label, template}) => {
+                  const id = uid();
+                  const uniqueLabel = getUniquePromptLabel(label, prompts);
+                  prompts.push({ id, label: uniqueLabel, template });
+                  selectedPromptId = id;
+                  saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                    renderSelect();
+                    window.showUINotification('Prompt added');
+                    window.flashButtonGreen(addBtn); // <<< ADD THIS LINE
+                  });
+                }
+              });
+            };
+
+            // Remove prompt: select from dropdown, then confirm
+            delBtn.onclick = () => {
+              // Only allow removing user prompts (not system or default)
+              const idx = prompts.findIndex(p => p.id === promptSel.value);
+              if (idx === -1) {
+                window.showUINotification('Select a user prompt to remove.', 'error');
+                return;
+              }
+              const promptToRemove = prompts[idx];
+              if (!confirm(`Are you sure you want to delete the prompt "${promptToRemove.label}"? This cannot be undone.`)) return;
+              prompts.splice(idx, 1);
+              const newId = prompts.length > 0 ? prompts[0].id : DEFAULT_PROFILE.id;
+              selectedPromptId = newId;
+              saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                renderSelect();
+                if (promptLimitMsg) promptLimitMsg.style.display = "none";
+                window.showUINotification('Prompt deleted');
+                window.flashButtonGreen(delBtn); // <<< ADD THIS LINE
+              });
+            };
+
+            // --- Prompt Modal UI ---
+            let promptModal = null;
+            function showPromptModal({mode = 'add', prompt = null, onSave = null}) {
+              // Remove any existing modal
+              if (promptModal) promptModal.remove();
+
+              promptModal = document.createElement('div');
+              promptModal.className = 'prompt-modal-backdrop';
+              promptModal.innerHTML = `
+                <div class="prompt-modal">
+                  <div class="prompt-modal-header">
+                    <span>${mode === 'add' ? 'Add New Prompt' : 'Edit Prompt'}</span>
+                    <button class="prompt-modal-close" title="Close">&times;</button>
+                  </div>
+                  <div class="prompt-modal-body">
+                    <label>
+                      <span>Prompt Name:</span>
+                      <input type="text" class="prompt-modal-name" value="${prompt?.label || ''}" maxlength="60" />
+                    </label>
+                    <label>
+                      <span>Prompt Template:</span>
+                      <textarea class="prompt-modal-template" rows="6" maxlength="2000">${prompt?.template || ''}</textarea>
+                    </label>
+                  </div>
+                  <div class="prompt-modal-footer">
+                    <button class="btn btn-primary prompt-modal-save">${mode === 'add' ? 'Add Prompt' : 'Save Changes'}</button>
+                    <button class="btn prompt-modal-cancel">Cancel</button>
+                  </div>
+                </div>
+              `;
+              document.body.appendChild(promptModal);
+
+              // Focus name input
+              const nameInput = promptModal.querySelector('.prompt-modal-name');
+              if (nameInput) nameInput.focus();
+
+              // Close modal
+              function closeModal() {
+                if (promptModal) {
+                  promptModal.remove();
+                  promptModal = null;
+                }
+              }
+              promptModal.querySelector('.prompt-modal-close').onclick = closeModal;
+              promptModal.querySelector('.prompt-modal-cancel').onclick = closeModal;
+              promptModal.addEventListener('click', (e) => {
+                if (e.target === promptModal) closeModal();
+              });
+
+              // Save handler
+              promptModal.querySelector('.prompt-modal-save').onclick = () => {
+                const label = nameInput.value.trim();
+                const template = promptModal.querySelector('.prompt-modal-template').value.trim();
+                if (!label) {
+                  window.showUINotification('Prompt name required', 'error');
+                  nameInput.focus();
+                  return;
+                }
+                if (!template) {
+                  window.showUINotification('Prompt template required', 'error');
+                  return;
+                }
+                if (onSave) onSave({label, template});
+                closeModal();
+              };
+            }
+
+            addBtn.onclick = () => {
+              if (prompts.length >= 5) {
+                window.showUINotification("Limit reached (5 user prompts). Delete one first.", 'error');
+                addBtn.disabled = true;
+                if (promptLimitMsg) promptLimitMsg.style.display = "block";
+                return;
+              }
+              showPromptModal({
+                mode: 'add',
+                onSave: ({label, template}) => {
+                  const id = uid();
+                  const uniqueLabel = getUniquePromptLabel(label, prompts);
+                  prompts.push({ id, label: uniqueLabel, template });
+                  selectedPromptId = id;
+                  saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                    renderSelect();
+                    window.showUINotification('Prompt added');
+                    window.flashButtonGreen(addBtn); // <<< ADD THIS LINE
+                  });
+                }
+              });
+            };
+
+            // Remove prompt: select from dropdown, then confirm
+            delBtn.onclick = () => {
+              // Only allow removing user prompts (not system or default)
+              const idx = prompts.findIndex(p => p.id === promptSel.value);
+              if (idx === -1) {
+                window.showUINotification('Select a user prompt to remove.', 'error');
+                return;
+              }
+              const promptToRemove = prompts[idx];
+              if (!confirm(`Are you sure you want to delete the prompt "${promptToRemove.label}"? This cannot be undone.`)) return;
+              prompts.splice(idx, 1);
+              const newId = prompts.length > 0 ? prompts[0].id : DEFAULT_PROFILE.id;
+              selectedPromptId = newId;
+              saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                renderSelect();
+                if (promptLimitMsg) promptLimitMsg.style.display = "none";
+                window.showUINotification('Prompt deleted');
+                window.flashButtonGreen(delBtn); // <<< ADD THIS LINE
+              });
+            };
+
+            // --- Prompt Modal UI ---
+            let promptModal = null;
+            function showPromptModal({mode = 'add', prompt = null, onSave = null}) {
+              // Remove any existing modal
+              if (promptModal) promptModal.remove();
+
+              promptModal = document.createElement('div');
+              promptModal.className = 'prompt-modal-backdrop';
+              promptModal.innerHTML = `
+                <div class="prompt-modal">
+                  <div class="prompt-modal-header">
+                    <span>${mode === 'add' ? 'Add New Prompt' : 'Edit Prompt'}</span>
+                    <button class="prompt-modal-close" title="Close">&times;</button>
+                  </div>
+                  <div class="prompt-modal-body">
+                    <label>
+                      <span>Prompt Name:</span>
+                      <input type="text" class="prompt-modal-name" value="${prompt?.label || ''}" maxlength="60" />
+                    </label>
+                    <label>
+                      <span>Prompt Template:</span>
+                      <textarea class="prompt-modal-template" rows="6" maxlength="2000">${prompt?.template || ''}</textarea>
+                    </label>
+                  </div>
+                  <div class="prompt-modal-footer">
+                    <button class="btn btn-primary prompt-modal-save">${mode === 'add' ? 'Add Prompt' : 'Save Changes'}</button>
+                    <button class="btn prompt-modal-cancel">Cancel</button>
+                  </div>
+                </div>
+              `;
+              document.body.appendChild(promptModal);
+
+              // Focus name input
+              const nameInput = promptModal.querySelector('.prompt-modal-name');
+              if (nameInput) nameInput.focus();
+
+              // Close modal
+              function closeModal() {
+                if (promptModal) {
+                  promptModal.remove();
+                  promptModal = null;
+                }
+              }
+              promptModal.querySelector('.prompt-modal-close').onclick = closeModal;
+              promptModal.querySelector('.prompt-modal-cancel').onclick = closeModal;
+              promptModal.addEventListener('click', (e) => {
+                if (e.target === promptModal) closeModal();
+              });
+
+              // Save handler
+              promptModal.querySelector('.prompt-modal-save').onclick = () => {
+                const label = nameInput.value.trim();
+                const template = promptModal.querySelector('.prompt-modal-template').value.trim();
+                if (!label) {
+                  window.showUINotification('Prompt name required', 'error');
+                  nameInput.focus();
+                  return;
+                }
+                if (!template) {
+                  window.showUINotification('Prompt template required', 'error');
+                  return;
+                }
+                if (onSave) onSave({label, template});
+                closeModal();
+              };
+            }
+
+            addBtn.onclick = () => {
+              if (prompts.length >= 5) {
+                window.showUINotification("Limit reached (5 user prompts). Delete one first.", 'error');
+                addBtn.disabled = true;
+                if (promptLimitMsg) promptLimitMsg.style.display = "block";
+                return;
+              }
+              showPromptModal({
+                mode: 'add',
+                onSave: ({label, template}) => {
+                  const id = uid();
+                  const uniqueLabel = getUniquePromptLabel(label, prompts);
+                  prompts.push({ id, label: uniqueLabel, template });
+                  selectedPromptId = id;
+                  saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                    renderSelect();
+                    window.showUINotification('Prompt added');
+                    window.flashButtonGreen(addBtn); // <<< ADD THIS LINE
+                  });
+                }
+              });
+            };
+
+            // Remove prompt: select from dropdown, then confirm
+            delBtn.onclick = () => {
+              // Only allow removing user prompts (not system or default)
+              const idx = prompts.findIndex(p => p.id === promptSel.value);
+              if (idx === -1) {
+                window.showUINotification('Select a user prompt to remove.', 'error');
+                return;
+              }
+              const promptToRemove = prompts[idx];
+              if (!confirm(`Are you sure you want to delete the prompt "${promptToRemove.label}"? This cannot be undone.`)) return;
+              prompts.splice(idx, 1);
+              const newId = prompts.length > 0 ? prompts[0].id : DEFAULT_PROFILE.id;
+              selectedPromptId = newId;
+              saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                renderSelect();
+                if (promptLimitMsg) promptLimitMsg.style.display = "none";
+                window.showUINotification('Prompt deleted');
+                window.flashButtonGreen(delBtn); // <<< ADD THIS LINE
+              });
+            };
+
+            // --- Prompt Modal UI ---
+            let promptModal = null;
+            function showPromptModal({mode = 'add', prompt = null, onSave = null}) {
+              // Remove any existing modal
+              if (promptModal) promptModal.remove();
+
+              promptModal = document.createElement('div');
+              promptModal.className = 'prompt-modal-backdrop';
+              promptModal.innerHTML = `
+                <div class="prompt-modal">
+                  <div class="prompt-modal-header">
+                    <span>${mode === 'add' ? 'Add New Prompt' : 'Edit Prompt'}</span>
+                    <button class="prompt-modal-close" title="Close">&times;</button>
+                  </div>
+                  <div class="prompt-modal-body">
+                    <label>
+                      <span>Prompt Name:</span>
+                      <input type="text" class="prompt-modal-name" value="${prompt?.label || ''}" maxlength="60" />
+                    </label>
+                    <label>
+                      <span>Prompt Template:</span>
+                      <textarea class="prompt-modal-template" rows="6" maxlength="2000">${prompt?.template || ''}</textarea>
+                    </label>
+                  </div>
+                  <div class="prompt-modal-footer">
+                    <button class="btn btn-primary prompt-modal-save">${mode === 'add' ? 'Add Prompt' : 'Save Changes'}</button>
+                    <button class="btn prompt-modal-cancel">Cancel</button>
+                  </div>
+                </div>
+              `;
+              document.body.appendChild(promptModal);
+
+              // Focus name input
+              const nameInput = promptModal.querySelector('.prompt-modal-name');
+              if (nameInput) nameInput.focus();
+
+              // Close modal
+              function closeModal() {
+                if (promptModal) {
+                  promptModal.remove();
+                  promptModal = null;
+                }
+              }
+              promptModal.querySelector('.prompt-modal-close').onclick = closeModal;
+              promptModal.querySelector('.prompt-modal-cancel').onclick = closeModal;
+              promptModal.addEventListener('click', (e) => {
+                if (e.target === promptModal) closeModal();
+              });
+
+              // Save handler
+              promptModal.querySelector('.prompt-modal-save').onclick = () => {
+                const label = nameInput.value.trim();
+                const template = promptModal.querySelector('.prompt-modal-template').value.trim();
+                if (!label) {
+                  window.showUINotification('Prompt name required', 'error');
+                  nameInput.focus();
+                  return;
+                }
+                if (!template) {
+                  window.showUINotification('Prompt template required', 'error');
+                  return;
+                }
+                if (onSave) onSave({label, template});
+                closeModal();
+              };
+            }
+
+            addBtn.onclick = () => {
+              if (prompts.length >= 5) {
+                window.showUINotification("Limit reached (5 user prompts). Delete one first.", 'error');
+                addBtn.disabled = true;
+                if (promptLimitMsg) promptLimitMsg.style.display = "block";
+                return;
+              }
+              showPromptModal({
+                mode: 'add',
+                onSave: ({label, template}) => {
+                  const id = uid();
+                  const uniqueLabel = getUniquePromptLabel(label, prompts);
+                  prompts.push({ id, label: uniqueLabel, template });
+                  selectedPromptId = id;
+                  saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                    renderSelect();
+                    window.showUINotification('Prompt added');
+                    window.flashButtonGreen(addBtn); // <<< ADD THIS LINE
+                  });
+                }
+              });
+            };
+
+            // Remove prompt: select from dropdown, then confirm
+            delBtn.onclick = () => {
+              // Only allow removing user prompts (not system or default)
+              const idx = prompts.findIndex(p => p.id === promptSel.value);
+              if (idx === -1) {
+                window.showUINotification('Select a user prompt to remove.', 'error');
+                return;
+              }
+              const promptToRemove = prompts[idx];
+              if (!confirm(`Are you sure you want to delete the prompt "${promptToRemove.label}"? This cannot be undone.`)) return;
+              prompts.splice(idx, 1);
+              const newId = prompts.length > 0 ? prompts[0].id : DEFAULT_PROFILE.id;
+              selectedPromptId = newId;
+              saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                renderSelect();
+                if (promptLimitMsg) promptLimitMsg.style.display = "none";
+                window.showUINotification('Prompt deleted');
+                window.flashButtonGreen(delBtn); // <<< ADD THIS LINE
+              });
+            };
+
+            // --- Prompt Modal UI ---
+            let promptModal = null;
+            function showPromptModal({mode = 'add', prompt = null, onSave = null}) {
+              // Remove any existing modal
+              if (promptModal) promptModal.remove();
+
+              promptModal = document.createElement('div');
+              promptModal.className = 'prompt-modal-backdrop';
+              promptModal.innerHTML = `
+                <div class="prompt-modal">
+                  <div class="prompt-modal-header">
+                    <span>${mode === 'add' ? 'Add New Prompt' : 'Edit Prompt'}</span>
+                    <button class="prompt-modal-close" title="Close">&times;</button>
+                  </div>
+                  <div class="prompt-modal-body">
+                    <label>
+                      <span>Prompt Name:</span>
+                      <input type="text" class="prompt-modal-name" value="${prompt?.label || ''}" maxlength="60" />
+                    </label>
+                    <label>
+                      <span>Prompt Template:</span>
+                      <textarea class="prompt-modal-template" rows="6" maxlength="2000">${prompt?.template || ''}</textarea>
+                    </label>
+                  </div>
+                  <div class="prompt-modal-footer">
+                    <button class="btn btn-primary prompt-modal-save">${mode === 'add' ? 'Add Prompt' : 'Save Changes'}</button>
+                    <button class="btn prompt-modal-cancel">Cancel</button>
+                  </div>
+                </div>
+              `;
+              document.body.appendChild(promptModal);
+
+              // Focus name input
+              const nameInput = promptModal.querySelector('.prompt-modal-name');
+              if (nameInput) nameInput.focus();
+
+              // Close modal
+              function closeModal() {
+                if (promptModal) {
+                  promptModal.remove();
+                  promptModal = null;
+                }
+              }
+              promptModal.querySelector('.prompt-modal-close').onclick = closeModal;
+              promptModal.querySelector('.prompt-modal-cancel').onclick = closeModal;
+              promptModal.addEventListener('click', (e) => {
+                if (e.target === promptModal) closeModal();
+              });
+
+              // Save handler
+              promptModal.querySelector('.prompt-modal-save').onclick = () => {
+                const label = nameInput.value.trim();
+                const template = promptModal.querySelector('.prompt-modal-template').value.trim();
+                if (!label) {
+                  window.showUINotification('Prompt name required', 'error');
+                  nameInput.focus();
+                  return;
+                }
+                if (!template) {
+                  window.showUINotification('Prompt template required', 'error');
+                  return;
+                }
+                if (onSave) onSave({label, template});
+                closeModal();
+              };
+            }
+
+            addBtn.onclick = () => {
+              if (prompts.length >= 5) {
+                window.showUINotification("Limit reached (5 user prompts). Delete one first.", 'error');
+                addBtn.disabled = true;
+                if (promptLimitMsg) promptLimitMsg.style.display = "block";
+                return;
+              }
+              showPromptModal({
+                mode: 'add',
+                onSave: ({label, template}) => {
+                  const id = uid();
+                  const uniqueLabel = getUniquePromptLabel(label, prompts);
+                  prompts.push({ id, label: uniqueLabel, template });
+                  selectedPromptId = id;
+                  saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                    renderSelect();
+                    window.showUINotification('Prompt added');
+                    window.flashButtonGreen(addBtn); // <<< ADD THIS LINE
+                  });
+                }
+              });
+            };
+
+            // Remove prompt: select from dropdown, then confirm
+            delBtn.onclick = () => {
+              // Only allow removing user prompts (not system or default)
+              const idx = prompts.findIndex(p => p.id === promptSel.value);
+              if (idx === -1) {
+                window.showUINotification('Select a user prompt to remove.', 'error');
+                return;
+              }
+              const promptToRemove = prompts[idx];
+              if (!confirm(`Are you sure you want to delete the prompt "${promptToRemove.label}"? This cannot be undone.`)) return;
+              prompts.splice(idx, 1);
+              const newId = prompts.length > 0 ? prompts[0].id : DEFAULT_PROFILE.id;
+              selectedPromptId = newId;
+              saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                renderSelect();
+                if (promptLimitMsg) promptLimitMsg.style.display = "none";
+                window.showUINotification('Prompt deleted');
+                window.flashButtonGreen(delBtn); // <<< ADD THIS LINE
+              });
+            };
+
+            // --- Prompt Modal UI ---
+            let promptModal = null;
+            function showPromptModal({mode = 'add', prompt = null, onSave = null}) {
+              // Remove any existing modal
+              if (promptModal) promptModal.remove();
+
+              promptModal = document.createElement('div');
+              promptModal.className = 'prompt-modal-backdrop';
+              promptModal.innerHTML = `
+                <div class="prompt-modal">
+                  <div class="prompt-modal-header">
+                    <span>${mode === 'add' ? 'Add New Prompt' : 'Edit Prompt'}</span>
+                    <button class="prompt-modal-close" title="Close">&times;</button>
+                  </div>
+                  <div class="prompt-modal-body">
+                    <label>
+                      <span>Prompt Name:</span>
+                      <input type="text" class="prompt-modal-name" value="${prompt?.label || ''}" maxlength="60" />
+                    </label>
+                    <label>
+                      <span>Prompt Template:</span>
+                      <textarea class="prompt-modal-template" rows="6" maxlength="2000">${prompt?.template || ''}</textarea>
+                    </label>
+                  </div>
+                  <div class="prompt-modal-footer">
+                    <button class="btn btn-primary prompt-modal-save">${mode === 'add' ? 'Add Prompt' : 'Save Changes'}</button>
+                    <button class="btn prompt-modal-cancel">Cancel</button>
+                  </div>
+                </div>
+              `;
+              document.body.appendChild(promptModal);
+
+              // Focus name input
+              const nameInput = promptModal.querySelector('.prompt-modal-name');
+              if (nameInput) nameInput.focus();
+
+              // Close modal
+              function closeModal() {
+                if (promptModal) {
+                  promptModal.remove();
+                  promptModal = null;
+                }
+              }
+              promptModal.querySelector('.prompt-modal-close').onclick = closeModal;
+              promptModal.querySelector('.prompt-modal-cancel').onclick = closeModal;
+              promptModal.addEventListener('click', (e) => {
+                if (e.target === promptModal) closeModal();
+              });
+
+              // Save handler
+              promptModal.querySelector('.prompt-modal-save').onclick = () => {
+                const label = nameInput.value.trim();
+                const template = promptModal.querySelector('.prompt-modal-template').value.trim();
+                if (!label) {
+                  window.showUINotification('Prompt name required', 'error');
+                  nameInput.focus();
+                  return;
+                }
+                if (!template) {
+                  window.showUINotification('Prompt template required', 'error');
+                  return;
+                }
+                if (onSave) onSave({label, template});
+                closeModal();
+              };
+            }
+
+            addBtn.onclick = () => {
+              if (prompts.length >= 5) {
+                window.showUINotification("Limit reached (5 user prompts). Delete one first.", 'error');
+                addBtn.disabled = true;
+                if (promptLimitMsg) promptLimitMsg.style.display = "block";
+                return;
+              }
+              showPromptModal({
+                mode: 'add',
+                onSave: ({label, template}) => {
+                  const id = uid();
+                  const uniqueLabel = getUniquePromptLabel(label, prompts);
+                  prompts.push({ id, label: uniqueLabel, template });
+                  selectedPromptId = id;
+                  saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                    renderSelect();
+                    window.showUINotification('Prompt added');
+                    window.flashButtonGreen(addBtn); // <<< ADD THIS LINE
+                  });
+                }
+              });
+            };
+
+            // Remove prompt: select from dropdown, then confirm
+            delBtn.onclick = () => {
+              // Only allow removing user prompts (not system or default)
+              const idx = prompts.findIndex(p => p.id === promptSel.value);
+              if (idx === -1) {
+                window.showUINotification('Select a user prompt to remove.', 'error');
+                return;
+              }
+              const promptToRemove = prompts[idx];
+              if (!confirm(`Are you sure you want to delete the prompt "${promptToRemove.label}"? This cannot be undone.`)) return;
+              prompts.splice(idx, 1);
+              const newId = prompts.length > 0 ? prompts[0].id : DEFAULT_PROFILE.id;
+              selectedPromptId = newId;
+              saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                renderSelect();
+                if (promptLimitMsg) promptLimitMsg.style.display = "none";
+                window.showUINotification('Prompt deleted');
+                window.flashButtonGreen(delBtn); // <<< ADD THIS LINE
+              });
+            };
+
+            // --- Prompt Modal UI ---
+            let promptModal = null;
+            function showPromptModal({mode = 'add', prompt = null, onSave = null}) {
+              // Remove any existing modal
+              if (promptModal) promptModal.remove();
+
+              promptModal = document.createElement('div');
+              promptModal.className = 'prompt-modal-backdrop';
+              promptModal.innerHTML = `
+                <div class="prompt-modal">
+                  <div class="prompt-modal-header">
+                    <span>${mode === 'add' ? 'Add New Prompt' : 'Edit Prompt'}</span>
+                    <button class="prompt-modal-close" title="Close">&times;</button>
+                  </div>
+                  <div class="prompt-modal-body">
+                    <label>
+                      <span>Prompt Name:</span>
+                      <input type="text" class="prompt-modal-name" value="${prompt?.label || ''}" maxlength="60" />
+                    </label>
+                    <label>
+                      <span>Prompt Template:</span>
+                      <textarea class="prompt-modal-template" rows="6" maxlength="2000">${prompt?.template || ''}</textarea>
+                    </label>
+                  </div>
+                  <div class="prompt-modal-footer">
+                    <button class="btn btn-primary prompt-modal-save">${mode === 'add' ? 'Add Prompt' : 'Save Changes'}</button>
+                    <button class="btn prompt-modal-cancel">Cancel</button>
+                  </div>
+                </div>
+              `;
+              document.body.appendChild(promptModal);
+
+              // Focus name input
+              const nameInput = promptModal.querySelector('.prompt-modal-name');
+              if (nameInput) nameInput.focus();
+
+              // Close modal
+              function closeModal() {
+                if (promptModal) {
+                  promptModal.remove();
+                  promptModal = null;
+                }
+              }
+              promptModal.querySelector('.prompt-modal-close').onclick = closeModal;
+              promptModal.querySelector('.prompt-modal-cancel').onclick = closeModal;
+              promptModal.addEventListener('click', (e) => {
+                if (e.target === promptModal) closeModal();
+              });
+
+              // Save handler
+              promptModal.querySelector('.prompt-modal-save').onclick = () => {
+                const label = nameInput.value.trim();
+                const template = promptModal.querySelector('.prompt-modal-template').value.trim();
+                if (!label) {
+                  window.showUINotification('Prompt name required', 'error');
+                  nameInput.focus();
+                  return;
+                }
+                if (!template) {
+                  window.showUINotification('Prompt template required', 'error');
+                  return;
+                }
+                if (onSave) onSave({label, template});
+                closeModal();
+              };
+            }
+
+            addBtn.onclick = () => {
+              if (prompts.length >= 5) {
+                window.showUINotification("Limit reached (5 user prompts). Delete one first.", 'error');
+                add

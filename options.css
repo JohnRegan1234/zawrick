@@ -12,10 +12,10 @@ html, body {
   --success: #10b981;
   --error: #ef4444;
   --warning: #f59e0b;
-  --border: #e2e8f0;
+  --border: rgba(0, 0, 0, 0.1);
   --border-light: #f1f5f9;
-  --radius: 12px;
-  --radius-sm: 8px;
+  --radius: 16px;
+  --radius-sm: 10px;
   --gap: 16px;
   --gap-sm: 12px;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -30,15 +30,30 @@ html, body {
   box-sizing: border-box;
 }
 
+/* Universal Font Inheritance */
+body, button, input, select, textarea {
+  font-family: var(--font);
+}
+
 body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font);
-  width: clamp(500px, 90vw, 680px);
+  width: clamp(500px, 90vw, 960px);
   padding: 0 var(--gap) var(--gap) var(--gap);
   line-height: 1.5;
   margin: 0 auto;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
   /* Remove any top padding here if present */
+}
+
+/* Ensure the HTML element also has rounded corners */
+html {
+  background: var(--bg);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
 
 /* Header */
@@ -185,6 +200,17 @@ body {
   color: #b45309;
   margin-inline-end: var(--gap-sm);
   line-height: 1;
+  /* Add/override for badge style: */
+  display: inline-block;
+  padding: 2px 8px;
+  background-color: #333;
+  color: #f1f5fa;
+  border-radius: 4px;
+  margin-left: 0;
+  margin-right: 8px;
+  font-weight: 700;
+  font-size: 1.1em;
+  line-height: 1.2;
 }
 .pending-cards label,
 .pending-cards span,
@@ -217,6 +243,8 @@ body {
   user-select: none;
   border-block-end: 1px solid var(--border);
   transition: background var(--transition);
+  border-top-left-radius: var(--radius);
+  border-top-right-radius: var(--radius);
 }
 .section-header:hover {
   background: #e8eaef;
@@ -315,6 +343,11 @@ body {
 .form-textarea {
   min-height: 80px;
   resize: vertical;
+}
+.form-textarea::placeholder {
+  color: var(--muted);
+  font-style: italic;
+  opacity: 1;
 }
 .input-wrapper {
   display: flex;
@@ -477,12 +510,24 @@ body {
   opacity: 0.6;
   cursor: not-allowed;
 }
+.btn.flash-success {
+  background-color: var(--success) !important;
+  border-color: var(--success) !important;
+  color: #fff !important;
+  transition: background-color 0.1s ease-in-out, border-color 0.1s ease-in-out, color 0.1s ease-in-out;
+}
 .btn-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-block: var(--gap-sm);
   justify-content: center; /* center all buttons horizontally */
+}
+.btn.flash-success {
+  background-color: var(--success) !important;
+  border-color: var(--success) !important;
+  color: #fff !important;
+  transition: background-color 0.1s ease-in-out, border-color 0.1s ease-in-out, color 0.1s ease-in-out;
 }
 
 /* Center text for GPT info and API key instructions */
@@ -494,47 +539,157 @@ body {
   width: 100%;
 }
 
-/* Helper Text & Boxes */
-.help-text {
-  font-size: 0.96rem;
-  color: var(--muted);
-  margin-block: 2px 4px;
-  line-height: 1.4;
+/* Yassified GPT Info Block */
+.gpt-info-yassified {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 28px 0 18px 0;
+  padding: 18px 0 10px 0;
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, #fff7ed 0%, #f8fafc 100%);
+  box-shadow: 0 2px 12px 0 rgb(255 102 0 / 0.06);
+  border: 1.5px solid #ffe0c2;
 }
-.help-box {
-  background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 100%);
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px 16px;
-  margin-block-end: var(--gap);
+
+.gpt-model-pill {
+  display: inline-block;
+  background: linear-gradient(90deg, #ffecd2 0%, #fcb69f 100%);
+  color: #b45309;
+  font-weight: 700;
+  font-size: 1.08rem;
+  border-radius: 999px;
+  padding: 6px 22px;
+  letter-spacing: 0.03em;
+  box-shadow: 0 1px 6px 0 rgb(255 102 0 / 0.08);
+  margin-bottom: 2px;
+}
+
+.gpt-key-link {
+  display: inline-block;
+  color: #ff6600;
+  background: #fff7ed;
+  border-radius: 99px;
+  padding: 5px 18px;
+  font-size: 1rem;
+  font-weight: 500;
+  text-decoration: none;
+  border: 1px solid #ffd6b0;
+  transition: background 0.18s, color 0.18s, border-color 0.18s, box-shadow 0.18s;
+  box-shadow: 0 1px 4px 0 rgb(255 102 0 / 0.07);
+}
+
+.gpt-key-link:hover,
+.gpt-key-link:focus {
+  background: #ffedd5;
+  color: #ff6600;
+  border-color: #ffb366;
+  text-decoration: underline;
+  box-shadow: 0 2px 8px 0 rgb(255 102 0 / 0.13);
+}
+
+/* Minimal GPT Info Block at bottom */
+.gpt-info-minimal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 32px 0 0 0;
+  padding: 0;
+}
+
+.gpt-model-pill-minimal {
+  display: inline-block;
+  background: #f8fafc;
+  color: #b45309;
+  font-weight: 600;
+  font-size: 1rem;
+  border-radius: 999px;
+  padding: 4px 16px;
+  letter-spacing: 0.02em;
+  border: 1px solid #ffe0c2;
+  margin-bottom: 2px;
+}
+
+.gpt-key-link-minimal {
+  display: inline-block;
+  color: #ff6600;
+  background: transparent;
+  border-radius: 99px;
+  padding: 2px 10px;
   font-size: 0.98rem;
   font-weight: 500;
-  display: block;
+  text-decoration: none;
+  border: none;
+  transition: color 0.18s, text-decoration 0.18s;
 }
-.help-box.error {
-  background: linear-gradient(90deg, #fee2e2 0%, #fecaca 100%);
-  color: #b91c1c;
-  border: 1px solid #fecaca;
+
+.gpt-key-link-minimal:hover,
+.gpt-key-link-minimal:focus {
+  color: #ff9800;
+  text-decoration: underline;
 }
-.template-help {
-  background: var(--bg);
-  border-inline-start: 4px solid var(--accent);
-  padding: 10px 16px;
-  border-radius: var(--radius-sm);
-  font-size: 0.98rem;
-  color: var(--fg);
-  margin-block-end: var(--gap-sm);
+
+/* Minimal inline GPT info at bottom */
+.gpt-info-minimal-inline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 18px 0 0 0;
+  font-size: 0.93rem;
+  color: #b45309;
+  font-weight: 500;
+  letter-spacing: 0.01em;
 }
-.template-var {
-  background: #fff7ed;
-  color: var(--accent);
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-family: monospace;
-  font-size: 0.97em;
-  margin: 0 2px;
-  border: 1px solid #ffd6b0;
+
+.gpt-model-pill-minimal-inline {
+  display: inline-block;
+  background: #f8fafc;
+  color: #b45309;
+  font-weight: 600;
+  font-size: 0.93rem;
+  border-radius: 999px;
+  padding: 2px 12px;
+  border: 1px solid #ffe0c2;
+}
+
+.gpt-key-link-minimal-inline {
+  display: inline-block;
+  color: #ff6600;
+  background: transparent;
+  border-radius: 99px;
+  padding: 2px 10px;
+  font-size: 0.93rem;
+  font-weight: 500;
+  text-decoration: none;
+  border: none;
+  transition: color 0.18s, text-decoration 0.18s;
+}
+
+.gpt-key-link-minimal-inline:hover,
+.gpt-key-link-minimal-inline:focus {
+  color: #ff9800;
+  text-decoration: underline;
+}
+
+.gpt-info-separator {
+  color: #b45309;
+  opacity: 0.5;
+  font-size: 0.93rem;
+  padding: 0 4px;
+}
+
+/* Remove old versions */
+.gpt-info,
+.api-key-instructions,
+.gpt-info-yassified,
+.gpt-model-pill,
+.gpt-key-link {
+  display: none !important;
 }
 
 /* Footer */
@@ -575,7 +730,7 @@ body {
 }
 .history-entry {
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   margin-block-end: 8px;
   background: #fff;
 }
@@ -587,7 +742,7 @@ body {
   padding: 8px 12px;
   cursor: pointer;
   background-color: #f8f9fa;
-  border-radius: 6px 6px 0 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   transition: background-color var(--transition);
 }
 .history-header:hover,
@@ -623,10 +778,10 @@ body {
   font-size: 13px;
   line-height: 1.4;
 }
-.history-prompt-template {
-  background: #f8f9fa;
-  border: 1px solid var(--border);
-  border-radius: 4px;
+.history-prompt-template,
+.history-generated-front,
+.history-source-text {
+  border-radius: var(--radius-sm);
   padding: 8px;
   font-family: monospace;
   font-size: 12px;
@@ -658,222 +813,436 @@ body {
 }
 .history-controls {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start; /* Correctly align all buttons to the left */
   align-items: center;
+  gap: var(--gap-sm);
   margin-block-end: var(--gap-sm);
   flex-wrap: wrap;
+  min-height: 44px;
 }
 
-#clear-history-action-area,
-#confirm-clear-history-area {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+/* Push count badge to the right in any .history-controls */
+.history-controls .count-badge {
+  margin-left: auto; /* This pushes the badge to the right */
+  flex-shrink: 0;    /* Prevents the badge from shrinking */
 }
 
-.confirm-message {
-  font-size: 0.95rem;
-  color: var(--muted);
-  margin-inline-end: var(--gap-sm);
-}
-
-.btn.error {
-  background-color: var(--error);
-  border-color: var(--error);
-  color: #fff;
-}
-.btn.error:hover,
-.btn.error:focus {
-  background-color: #d32f2f;
-  border-color: #d32f2f;
-}
-
-/* System prompt styling */
-.form-input:disabled,
-.form-textarea:disabled {
-  background-color: #f8f9fa !important;
-  color: #6c757d !important;
-  cursor: not-allowed;
-  border-color: #e9ecef;
-}
-
-.system-prompt-help {
-  background: linear-gradient(90deg, #e3f2fd 0%, #f3e5f5 100%);
-  border-inline-start: 4px solid #2196f3;
-  padding: 8px 12px;
-  border-radius: 4px;
-  font-size: 0.9rem;
-  margin-block-start: 8px;
-}
-
-/* Select option styling */
-select option:disabled {
-  color: #495057 !important;
-  font-weight: bold;
-}
-
-/* Form label and info button alignment */
-.form-label-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-block-end: 4px;
-}
-.form-label-group .form-label {
-  margin-block-end: 0;
-}
-.info-button {
-  background: none;
-  border: none;
-  padding: 2px;
-  cursor: pointer;
-  color: var(--muted);
+/* Ensure count badges are consistently positioned */
+.history-count,
+#pdf-review-count {
   display: inline-flex;
   align-items: center;
-  border-radius: 50%;
-  transition: background-color var(--transition), color var(--transition);
-}
-.info-button:hover,
-.info-button:focus {
-  color: var(--accent);
-}
-.info-button .info-icon {
-  width: 16px;
-  height: 16px;
-}
-
-/* Screen-reader only text */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
-}
-
-/* Collapsible help content */
-.collapsible-help {
-  background-color: var(--bg);
+  justify-content: center;
+  padding: 4px 12px;
+  background-color: #64748b;
+  color: #f1f5fa;
   border-radius: var(--radius-sm);
-  padding: 0 var(--gap-sm);
-  margin-block-end: var(--gap-sm);
-  overflow: hidden;
-  max-height: 0;
-  opacity: 0;
-  transition: max-height 0.3s var(--transition), opacity 0.3s var(--transition), padding-top 0.3s var(--transition), padding-bottom 0.3s var(--transition);
-}
-.collapsible-help.shown {
-  max-height: 200px;
-  opacity: 1;
-  padding-top: var(--gap-sm);
-  padding-bottom: var(--gap-sm);
-}
-.collapsible-help .help-text {
-  margin-block: 0;
   font-size: 0.9rem;
-}
-
-/* Custom Select Styles */
-.custom-select-wrapper {
-  position: relative;
-  font-family: var(--font);
-}
-
-.custom-select-trigger {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  width: 100%;
-  text-align: left;
-  padding-right: 30px;
-  position: relative;
-  user-select: none;
-}
-
-.custom-select-trigger .selected-value {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-weight: 600;
   white-space: nowrap;
-  flex-grow: 1;
+  margin-left: auto;
+  min-height: 28px;
 }
 
-.custom-select-arrow {
-  width: 18px;
-  height: 18px;
-  background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' fill='gray' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4 6l4 4 4-4' stroke='currentColor' stroke-width='2' fill='none' fill-rule='evenodd'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: contain;
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%) rotate(0deg);
-  transition: transform var(--transition);
-  pointer-events: none;
+/* Responsive adjustments for smaller screens */
+@media (max-width: 600px) {
+  .history-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--gap-sm);
+  }
+  
+  #clear-history-action-area,
+  #confirm-clear-history-area {
+    justify-content: center;
+  }
+  
+  .history-count,
+  #pdf-review-count {
+    margin-left: 0;
+    align-self: center;
+  }
+  
+  /* NEW: Ensure count badge centers in column layout */
+  .history-controls .count-badge {
+    margin-left: 0;
+    align-self: center;
+  }
 }
 
-.custom-select-trigger[aria-expanded="true"] .custom-select-arrow {
-  transform: translateY(-50%) rotate(180deg);
+/* Dark mode adjustments for count badges */
+@media (prefers-color-scheme: dark) {
+  /* ...existing code... */
+  
+  .history-count,
+  #pdf-review-count {
+    background-color: #a0aec0;
+    color: #23262f;
+  }
 }
 
-.custom-select-options {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  background: #fff;
-  border: 1px solid var(--border);
+/* --- Count/Label Styling for Inline Elements in Flex Containers --- */
+.count-badge,
+.status-badge,
+.label-badge,
+.pending-count,
+.history-count {
+  display: inline-block;
+  padding: 2px 8px;
+  background-color: #333;
+  color: #f1f5fa;
   border-radius: var(--radius-sm);
-  z-index: 10;
-  max-height: 200px;
-  overflow-y: auto;
-  box-shadow: var(--shadow-lg);
-  display: none;
+  font-weight: 600;
+  font-size: 1em;
+  margin-left: 10px;
+  margin-right: 0;
+  vertical-align: middle;
+  letter-spacing: 0.02em;
 }
 
-.custom-select-options.shown {
-  display: block;
+/* If .pending-count is already styled, ensure it inherits the new style */
+.pending-count {
+  /* ...existing .pending-count styles... */
+  /* Add/override for badge style: */
+  display: inline-block;
+  padding: 2px 8px;
+  background-color: #333;
+  color: #f1f5fa;
+  border-radius: 4px;
+  margin-left: 0;
+  margin-right: 8px;
+  font-weight: 700;
+  font-size: 1.1em;
+  line-height: 1.2;
 }
 
-.custom-select-option {
-  padding: 8px 12px;
-  cursor: pointer;
-  font-size: 1rem;
-  transition: background-color var(--transition);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* For .history-count in controls row */
+.history-count {
+  display: inline-block;
+  padding: 2px 8px;
+  background-color: #64748b;
+  color: #f1f5fa;
+  border-radius: var(--radius-sm);
+  margin-left: 10px;
+  font-size: 0.98em;
+  font-weight: 500;
 }
 
-.custom-select-option:hover,
-.custom-select-option.selected,
-.custom-select-option:focus {
-  background-color: var(--border-light);
-  color: var(--fg);
+/* For dark mode, adjust badge backgrounds for contrast */
+@media (prefers-color-scheme: dark) {
+  .count-badge,
+  .status-badge,
+  .label-badge,
+  .pending-count,
+  .history-count {
+    background-color: #f1f5fa;
+    color: #23262f;
+  }
+  .history-count {
+    background-color: #a0aec0;
+    color: #23262f;
+  }
+  .pending-count {
+    background-color: #f1c40f;
+    color: #23262f;
+  }
 }
 
-/* Optional: Add a subtle search input at the top of the dropdown */
+/* --- DARK MODE SUPPORT (prefers-color-scheme: dark) --- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #181a20;
+    --fg: #f1f5fa;
+    --muted: #a0aec0;
+    --accent: #ff9800;
+    --success: #22d3ee;
+    --error: #ef4444;
+    --warning: #fbbf24;
+    --border: rgba(255, 255, 255, 0.1);
+    --border-light: #23262f;
+    --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.5), 0 1px 2px -1px rgb(0 0 0 / 0.4);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.25), 0 4px 6px -4px rgb(0 0 0 / 0.18);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+  }
+
+  .header,
+  .section,
+  .section-header,
+  .section-body,
+  .section-body-content,
+  .pending-cards,
+  .help-box,
+  .template-help,
+  .history-entry,
+  .history-details,
+  .form-input,
+  .form-select,
+  .form-textarea,
+  .custom-select-options,
+  .custom-select-option,
+  .notification,
+  .footer {
+    background-color: #23262f !important;
+    color: var(--fg) !important;
+    border-color: #23262f !important;
+  }
+
+  .section-header,
+  .section-header:hover {
+    background: #23262f !important;
+  }
+
+  .section-title,
+  .section-subtitle,
+  .form-label,
+  .toggle-label,
+  .history-entry-title,
+  .history-entry-meta,
+  .history-detail-label,
+  .history-detail-content,
+  .footer-link,
+  .btn,
+  .btn-primary,
+  .btn-secondary {
+    color: var(--fg) !important;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #181a20 !important;
+    border-color: var(--accent);
+  }
+  .btn-secondary {
+    background: #23262f;
+    color: var(--accent) !important;
+    border-color: var(--accent);
+  }
+  .btn.error {
+    background-color: var(--error);
+    border-color: var(--error);
+    color: #fff !important;
+  }
+
+  .form-input,
+  .form-select,
+  .form-textarea {
+    background: #23262f !important;
+    color: var(--fg) !important;
+    border-color: #353945 !important;
+  }
+  .form-input:focus,
+  .form-select:focus,
+  .form-textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.18);
+  }
+
+  .input-addon {
+    background: #23262f !important;
+    color: var(--muted) !important;
+    border-color: #353945 !important;
+  }
+
+  .toggle-container {
+    background: #23262f !important;
+    border-color: #353945 !important;
+  }
+  .toggle-switch {
+    background: #353945 !important;
+    border-color: #353945 !important;
+  }
+  .toggle-checkbox:checked + .toggle-switch {
+    background: var(--accent) !important;
+    border-color: var(--accent) !important;
+  }
+
+  .notification {
+    background: linear-gradient(135deg, var(--success), #0e7490) !important;
+    color: #181a20 !important;
+  }
+  .notification.error {
+    background: linear-gradient(135deg, var(--error), #7f1d1d) !important;
+    color: #fff !important;
+  }
+
+  .help-box.error {
+    background: linear-gradient(90deg, #7f1d1d 0%, #b91c1c 100%) !important;
+    color: #fff !important;
+    border-color: #b91c1c !important;
+  }
+
+  .system-prompt-help {
+    background: linear-gradient(90deg, #23262f 0%, #2d3748 100%) !important;
+    border-inline-start: 4px solid #2196f3 !important;
+    color: #b3c7f9 !important;
+  }
+
+  .history-entry,
+  .history-details,
+  .history-detail-content,
+  .history-prompt-template,
+  .history-generated-front,
+  .history-source-text,
+  .custom-select-options,
+  .custom-select-option,
+  .custom-select-search input {
+    background: #23262f !important;
+    color: var(--fg) !important;
+    border-color: #353945 !important;
+  }
+
+  .custom-select-option.selected,
+  .custom-select-option:hover,
+  .custom-select-option:focus {
+    background-color: #353945 !important;
+    color: var(--accent) !important;
+  }
+
+  .footer,
+  .footer-link {
+    background: #181a20 !important;
+    color: var(--muted) !important;
+  }
+
+  /* --- FIX 1: History Entry Text Readability --- */
+  .history-entry .history-entry-title,
+  .history-entry .history-entry-meta,
+  .history-entry .history-detail-content,
+  .history-entry .history-detail-content span,
+  .history-entry .history-detail-content a {
+    color: var(--fg) !important;
+  }
+
+  /* --- FIX 2: Pending Cards Banner Readability --- */
+  .pending-cards,
+  .pending-cards #pending-summary,
+  .pending-cards .pending-count,
+  .pending-cards label,
+  .pending-cards span,
+  .pending-cards .pending-label {
+    color: #1e293b !important;
+  }
+
+  /* --- FIX 3: History Entry Button Readability --- */
+  .history-entry .btn,
+  .history-entry .btn-secondary {
+    color: var(--accent) !important;
+    background: #23262f;
+    border-color: var(--accent);
+  }
+  .history-entry .btn-secondary:hover,
+  .history-entry .btn-secondary:focus {
+    background: rgba(255, 167, 38, 0.1);
+    color: var(--accent) !important;
+  }
+
+  /* --- START: Definitive Fix for Dark Mode Readability --- */
+  /* Force the entire list item container to have a dark background */
+  .history-entry {
+    background-color: #23262f !important;
+  }
+
+  /* Force the header within the list item to be transparent, showing the dark background */
+  .history-entry .history-entry-header {
+    background-color: transparent !important;
+  }
+
+  /* Force all text elements inside the list items to be light-colored */
+  .history-entry .history-entry-title,
+  .history-entry .history-entry-meta,
+  .history-entry .history-detail-label,
+  .history-entry .history-detail-content,
+  .history-entry .history-detail-content span,
+  .history-entry .history-detail-content i {
+    color: var(--fg) !important;
+  }
+
+  /* Make links readable */
+  .history-entry .history-detail-content a {
+    color: var(--accent) !important;
+  }
+
+  /* Make buttons inside the list items readable */
+  .history-entry .btn {
+    color: var(--fg) !important;
+    background-color: #3b404d !important;
+    border-color: #4a4e59 !important;
+  }
+
+  .history-entry .btn.btn-primary {
+    background: var(--accent) !important;
+    color: #181a20 !important;
+    border-color: var(--accent) !important;
+  }
+
+  .history-entry .btn.error {
+    background-color: var(--error) !important;
+    border-color: var(--error) !important;
+    color: #fff !important;
+  }
+  /* --- END: Definitive Fix for Dark Mode Readability --- */
+}
+
+/* --- Custom Select Dropdown & Search Box Formatting --- */
+.custom-select-options {
+  /* Inherit the main border-radius for a consistent rounded look */
+  border-radius: var(--radius-sm);
+}
+
 .custom-select-search {
+  /* Add padding around the search box */
   padding: 8px;
   border-bottom: 1px solid var(--border);
 }
 
 .custom-select-search input {
-  width: 100%;
-  padding: 6px 10px;
+  /* Make the search input look exactly like other form inputs */
+  padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  font-size: 1rem;
   font-family: var(--font);
-  font-size: 0.95rem;
-  box-sizing: border-box;
+  background: #fff;
+  color: var(--fg);
+  transition: border-color var(--transition), box-shadow var(--transition);
+  outline: none;
+  box-shadow: none;
 }
+
 .custom-select-search input:focus {
+  /* Add the standard focus style */
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.15);
+}
+
+/* Restyled Info/Help Button */
+.info-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--border-light);
+  border: 1px solid var(--border);
+  border-radius: 99px; /* This creates the pill shape */
+  padding: 4px 10px;
+  margin-left: 4px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.info-button:hover,
+.info-button:focus {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(255, 102, 0, 0.08); /* A subtle orange background on hover */
   outline: none;
 }
+
+/* The .history-count class already provides the advanced badge style.
+   No further changes needed if both counters use .history-count count-badge. */
