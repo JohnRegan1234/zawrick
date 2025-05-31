@@ -1,6 +1,6 @@
 // options.js
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     // ----- Element references -----
     // Status bar
     const statusBar = document.getElementById('status-bar');
@@ -134,18 +134,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         // ----- Helpers -----
-        function showNotification(msg, isError=false){
-            if (!notification) return;
-            notification.textContent = msg;
-            notification.classList.remove('show','error');
-            void notification.offsetWidth; // restart animation
-            if(isError) notification.classList.add('error');
-            notification.classList.add('show');
-            if(!isError){
-                setTimeout(()=>notification.classList.remove('show','error'),2500);
-            }
-        }
-
         function toggleGPTSection(on) {
             if (!gptBody) return;
             const inputs = gptBody.querySelectorAll('input, select, textarea, button:not(.section-toggle)');
@@ -200,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const saveSettings = s=>new Promise(resolve=>{
             chrome.storage.local.set(s,()=>{
-                showNotification('Settings saved');
+                window.showUINotification('Settings saved');
                 resolve();
             });
         });
@@ -253,6 +241,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // --- Move renderSelect definition here ---
+            let currentPromptId = null; // Track the currently displayed prompt (system or user)
+
             function renderSelect() {
               // Defensive: ensure prompts is always an array
               if (!Array.isArray(prompts)) prompts = [];
@@ -285,16 +275,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
               });
               
-              // Find current selection (system or user prompt)
-              let current = SYSTEM_PROMPTS.find(p => p.id === selectedPromptId) || 
-                           prompts.find(p => p.id === selectedPromptId) || 
-                           prompts[0] || 
-                           SYSTEM_PROMPTS[0];
-              
+              // Use currentPromptId if set, else selectedPromptId, else fallback
+              let current = null;
+              if (currentPromptId) {
+                current = SYSTEM_PROMPTS.find(p => p.id === currentPromptId) ||
+                          prompts.find(p => p.id === currentPromptId);
+              }
+              if (!current) {
+                // FIX: Also allow DEFAULT_PROFILE (id: 'basic-default') to be selected as a valid prompt
+                current = SYSTEM_PROMPTS.find(p => p.id === selectedPromptId) ||
+                          prompts.find(p => p.id === selectedPromptId) ||
+                          (selectedPromptId === DEFAULT_PROFILE.id ? DEFAULT_PROFILE : null) ||
+                          prompts[0] ||
+                          SYSTEM_PROMPTS[0];
+                currentPromptId = current.id;
+              }
               promptSel.value = current.id;
               
               // Update UI based on selection type
-              const isSystemPrompt = current.isSystem || false;
+              // FIX: Treat DEFAULT_PROFILE as a user prompt (not system), so allow editing
+              const isSystemPrompt = current.isSystem === true;
               updateUIForPromptType(current, isSystemPrompt);
 
               // Cap at 5 user prompts (system prompts don't count)
@@ -384,6 +384,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (ankiBody && ankiToggle) toggleSection(ankiBody, ankiToggle, true); // Expand Anki
             if (gptBody && gptToggle) toggleSection(gptBody, gptToggle, true);   // Expand GPT
             if (historyBody && historyToggle) toggleSection(historyBody, historyToggle, false); // Collapse History by default
+            if (pdfReviewBody && pdfReviewToggle) toggleSection(pdfReviewBody, pdfReviewToggle, false); // Collapse PDF Review by default
 
             await refreshAnkiStatus();
             await updatePendingCards();
@@ -392,22 +393,29 @@ document.addEventListener('DOMContentLoaded', () => {
             if (historyBody && historyToggle) toggleSection(historyBody, historyToggle, false);
 
             renderSelect();
+            await renderPdfReviewList();
 
             // Change prompt selection handler:
             promptSel.onchange = () => {
               const newSelectedId = promptSel.value;
+              // FIX: Treat DEFAULT_PROFILE as a user prompt (not system)
               const isSystemPrompt = SYSTEM_PROMPTS.some(p => p.id === newSelectedId);
-              
+              currentPromptId = newSelectedId; // Always update the currently displayed prompt
+
               if (isSystemPrompt) {
                 // For system prompts, just update UI but don't save to selectedPrompt
                 const systemPrompt = SYSTEM_PROMPTS.find(p => p.id === newSelectedId);
                 updateUIForPromptType(systemPrompt, true);
+                renderSelect();
               } else {
-                // For user prompts, update selectedPrompt and save
+                // For user prompts (including DEFAULT_PROFILE), update selectedPrompt and save
                 selectedPromptId = newSelectedId;
+                // Find in prompts or use DEFAULT_PROFILE if matches
+                const userPrompt = prompts.find(p => p.id === selectedPromptId) ||
+                                   (selectedPromptId === DEFAULT_PROFILE.id ? DEFAULT_PROFILE : null);
                 saveSettings({ selectedPrompt: selectedPromptId }).then(() => {
-                  const userPrompt = prompts.find(p => p.id === selectedPromptId);
                   updateUIForPromptType(userPrompt, false);
+                  renderSelect();
                 });
               }
             };
@@ -445,37 +453,113 @@ document.addEventListener('DOMContentLoaded', () => {
               }
             };
 
-            addBtn.onclick = () => {
-                if (prompts.length >= 5) {
-                    showNotification("Limit reached (5 user prompts). Delete one first.", true);
-                    addBtn.disabled = true;
-                    if (promptLimitMsg) promptLimitMsg.style.display = "block";
-                    return;
+            // --- Prompt Modal UI ---
+            let promptModal = null;
+            function showPromptModal({mode = 'add', prompt = null, onSave = null}) {
+              // Remove any existing modal
+              if (promptModal) promptModal.remove();
+
+              promptModal = document.createElement('div');
+              promptModal.className = 'prompt-modal-backdrop';
+              promptModal.innerHTML = `
+                <div class="prompt-modal">
+                  <div class="prompt-modal-header">
+                    <span>${mode === 'add' ? 'Add New Prompt' : 'Edit Prompt'}</span>
+                    <button class="prompt-modal-close" title="Close">&times;</button>
+                  </div>
+                  <div class="prompt-modal-body">
+                    <label>
+                      <span>Prompt Name:</span>
+                      <input type="text" class="prompt-modal-name" value="${prompt?.label || ''}" maxlength="60" />
+                    </label>
+                    <label>
+                      <span>Prompt Template:</span>
+                      <textarea class="prompt-modal-template" rows="6" maxlength="2000">${prompt?.template || ''}</textarea>
+                    </label>
+                  </div>
+                  <div class="prompt-modal-footer">
+                    <button class="btn btn-primary prompt-modal-save">${mode === 'add' ? 'Add Prompt' : 'Save Changes'}</button>
+                    <button class="btn prompt-modal-cancel">Cancel</button>
+                  </div>
+                </div>
+              `;
+              document.body.appendChild(promptModal);
+
+              // Focus name input
+              const nameInput = promptModal.querySelector('.prompt-modal-name');
+              if (nameInput) nameInput.focus();
+
+              // Close modal
+              function closeModal() {
+                if (promptModal) {
+                  promptModal.remove();
+                  promptModal = null;
                 }
-                const id = uid();
-                const baseLabel = profileNameInput?.value?.trim() || `Profile`;
-                const label = getUniquePromptLabel(baseLabel, prompts);
-                const template = tplBox?.value?.trim() || '';
-                prompts.push({ id, label, template });
-                selectedPromptId = id; // Select the new prompt
-                saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+              }
+              promptModal.querySelector('.prompt-modal-close').onclick = closeModal;
+              promptModal.querySelector('.prompt-modal-cancel').onclick = closeModal;
+              promptModal.addEventListener('click', (e) => {
+                if (e.target === promptModal) closeModal();
+              });
+
+              // Save handler
+              promptModal.querySelector('.prompt-modal-save').onclick = () => {
+                const label = nameInput.value.trim();
+                const template = promptModal.querySelector('.prompt-modal-template').value.trim();
+                if (!label) {
+                  window.showUINotification('Prompt name required', 'error');
+                  nameInput.focus();
+                  return;
+                }
+                if (!template) {
+                  window.showUINotification('Prompt template required', 'error');
+                  return;
+                }
+                if (onSave) onSave({label, template});
+                closeModal();
+              };
+            }
+
+            addBtn.onclick = () => {
+              if (prompts.length >= 5) {
+                window.showUINotification("Limit reached (5 user prompts). Delete one first.", 'error');
+                addBtn.disabled = true;
+                if (promptLimitMsg) promptLimitMsg.style.display = "block";
+                return;
+              }
+              showPromptModal({
+                mode: 'add',
+                onSave: ({label, template}) => {
+                  const id = uid();
+                  const uniqueLabel = getUniquePromptLabel(label, prompts);
+                  prompts.push({ id, label: uniqueLabel, template });
+                  selectedPromptId = id;
+                  saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
                     renderSelect();
-                });
+                    window.showUINotification('Prompt added');
+                  });
+                }
+              });
             };
 
+            // Remove prompt: select from dropdown, then confirm
             delBtn.onclick = () => {
-                if (delBtn.disabled) return; // Skip if system prompt or last user prompt
-                
-                const idx = prompts.findIndex(p=>p.id===promptSel.value);
-                if (idx === -1) return; // Not a user prompt
-                
-                prompts.splice(idx,1);
-                const newId = prompts.length > 0 ? prompts[0].id : SYSTEM_PROMPTS[0].id;
-                selectedPromptId = prompts.length > 0 ? newId : 'basic-default';
-                saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
-                    renderSelect();
-                    if (promptLimitMsg) promptLimitMsg.style.display = "none";
-                });
+              // Only allow removing user prompts (not system or default)
+              const idx = prompts.findIndex(p => p.id === promptSel.value);
+              if (idx === -1) {
+                window.showUINotification('Select a user prompt to remove.', 'error');
+                return;
+              }
+              const promptToRemove = prompts[idx];
+              if (!confirm(`Are you sure you want to delete the prompt "${promptToRemove.label}"? This cannot be undone.`)) return;
+              prompts.splice(idx, 1);
+              const newId = prompts.length > 0 ? prompts[0].id : DEFAULT_PROFILE.id;
+              selectedPromptId = newId;
+              saveSettings({ prompts, selectedPrompt: selectedPromptId }).then(() => {
+                renderSelect();
+                if (promptLimitMsg) promptLimitMsg.style.display = "none";
+                window.showUINotification('Prompt deleted');
+              });
             };
 
             tplBox.addEventListener('input', () => {
@@ -488,15 +572,207 @@ document.addEventListener('DOMContentLoaded', () => {
               }
             });
 
+            // Custom Select for Anki Decks and Note Types
+    function setupCustomSelect(wrapperId, triggerId, selectedValueId, optionsId, originalSelectId, fetchFunction, saveSettingCallback, initialSettingValue) {
+        const wrapper = document.getElementById(wrapperId);
+        const trigger = document.getElementById(triggerId);
+        const selectedValueDisplay = document.getElementById(selectedValueId);
+        const optionsContainer = document.getElementById(optionsId);
+        const originalSelect = document.getElementById(originalSelectId);
+
+        if (!trigger || !selectedValueDisplay || !optionsContainer || !originalSelect) return;
+
+        let currentOptions = [];
+        let searchInput = null;
+
+        // --- Add search input ---
+        function renderSearchInput() {
+            let searchDiv = optionsContainer.querySelector('.custom-select-search');
+            if (!searchDiv) {
+                searchDiv = document.createElement('div');
+                searchDiv.className = 'custom-select-search';
+                searchInput = document.createElement('input');
+                searchInput.type = 'text';
+                searchInput.placeholder = 'Type to search...';
+                searchDiv.appendChild(searchInput);
+                optionsContainer.prepend(searchDiv);
+
+                searchInput.addEventListener('input', () => {
+                    renderOptions(searchInput.value);
+                });
+            }
+        }
+
+        function renderOptions(filter = "") {
+            // Remove all except the search input
+            Array.from(optionsContainer.children).forEach(child => {
+                if (!child.classList.contains('custom-select-search')) {
+                    optionsContainer.removeChild(child);
+                }
+            });
+            let filtered = currentOptions;
+            if (filter && filter.trim()) {
+                const f = filter.trim().toLowerCase();
+                filtered = currentOptions.filter(opt => opt.toLowerCase().includes(f));
+            }
+            if (filtered.length === 0) {
+                const noOpt = document.createElement('div');
+                noOpt.className = 'custom-select-option disabled';
+                noOpt.textContent = 'No options found';
+                optionsContainer.appendChild(noOpt);
+            } else {
+                filtered.forEach(name => {
+                    const optionElement = document.createElement('div');
+                    optionElement.classList.add('custom-select-option');
+                    optionElement.setAttribute('role', 'option');
+                    optionElement.dataset.value = name;
+                    optionElement.textContent = name;
+                    optionElement.tabIndex = -1;
+                    optionElement.addEventListener('click', () => {
+                        selectOption(name, optionElement);
+                    });
+                    // Highlight selected
+                    if (originalSelect.value === name) {
+                        optionElement.classList.add('selected');
+                    }
+                    optionsContainer.appendChild(optionElement);
+                });
+            }
+        }
+
+        async function populateOptions() {
+            try {
+                const names = await fetchFunction();
+                currentOptions = names;
+                optionsContainer.innerHTML = '';
+                renderSearchInput();
+                renderOptions();
+                // Set initial selected value
+                const currentSavedValue = initialSettingValue || (names.length > 0 ? names[0] : 'Select...');
+                selectOption(currentSavedValue, Array.from(optionsContainer.querySelectorAll('.custom-select-option')).find(opt => opt.dataset.value === currentSavedValue), false);
+            } catch (error) {
+                console.error('Error populating custom select:', error);
+                optionsContainer.innerHTML = '<div class="custom-select-option error">Error loading options</div>';
+                selectedValueDisplay.textContent = 'Error';
+            }
+        }
+
+        function selectOption(value, optionElement, doSave = true) {
+            selectedValueDisplay.textContent = value;
+            if (originalSelect) {
+                let opt = Array.from(originalSelect.options).find(o => o.value === value);
+                if (!opt) {
+                    opt = new Option(value, value);
+                    originalSelect.add(opt);
+                }
+                originalSelect.value = value;
+            }
+            optionsContainer.querySelectorAll('.custom-select-option.selected').forEach(opt => opt.classList.remove('selected'));
+            if (optionElement) {
+                optionElement.classList.add('selected');
+            }
+            if (doSave) {
+                saveSettingCallback(value);
+            }
+            closeDropdown();
+        }
+
+        function toggleDropdown() {
+            const isExpanded = trigger.getAttribute('aria-expanded') === 'true';
+            if (isExpanded) {
+                closeDropdown();
+            } else {
+                openDropdown();
+            }
+        }
+
+        function openDropdown() {
+            optionsContainer.style.display = 'block';
+            trigger.setAttribute('aria-expanded', 'true');
+            if (searchInput) {
+                searchInput.value = '';
+                searchInput.focus();
+                renderOptions();
+            }
+            const currentlySelected = selectedValueDisplay.textContent;
+            const optionToHighlight = Array.from(optionsContainer.querySelectorAll('.custom-select-option')).find(opt => opt.dataset.value === currentlySelected);
+            if (optionToHighlight) {
+                optionToHighlight.scrollIntoView({ block: 'nearest' });
+            }
+        }
+
+        function closeDropdown() {
+            optionsContainer.style.display = 'none';
+            trigger.setAttribute('aria-expanded', 'false');
+        }
+
+        trigger.addEventListener('click', toggleDropdown);
+
+        document.addEventListener('click', (event) => {
+            if (!wrapper.contains(event.target)) {
+                closeDropdown();
+            }
+        });
+
+        // Allow typing directly on the trigger to search
+        trigger.addEventListener('keydown', (e) => {
+            if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                openDropdown();
+                if (searchInput) {
+                    searchInput.value = e.key;
+                    searchInput.focus();
+                    searchInput.setSelectionRange(1, 1);
+                    renderOptions(searchInput.value);
+                }
+                e.preventDefault();
+            }
+        });
+
+        populateOptions();
+
+        return { refresh: populateOptions, select: selectOption };
+    }
+
+    // For Anki Decks
+    let ankiDeckCustomSelect, ankiNoteTypeCustomSelect;
+    ankiDeckCustomSelect = setupCustomSelect(
+        'anki-deck-custom-wrapper',
+        'anki-deck-custom-trigger',
+        'anki-deck-selected-value',
+        'anki-deck-options',
+        'anki-deck',
+        async () => fetchAnki('deckNames'),
+        (deckName) => saveSettings({ deckName: deckName }),
+        settings.deckName
+    );
+    ankiNoteTypeCustomSelect = setupCustomSelect(
+        'anki-note-type-custom-wrapper',
+        'anki-note-type-custom-trigger',
+        'anki-note-type-selected-value',
+        'anki-note-type-options',
+        'anki-note-type',
+        async () => fetchAnki('modelNames'),
+        (modelName) => saveSettings({ modelName: modelName }),
+        settings.modelName
+    );
+
+    // in refreshAnkiStatus, after updating deckSel...
+    if (ankiDeckCustomSelect && typeof ankiDeckCustomSelect.refresh === 'function') {
+        await ankiDeckCustomSelect.refresh();
+        ankiDeckCustomSelect.select(deckSel.value, null, false);
+    }
+    if (ankiNoteTypeCustomSelect && typeof ankiNoteTypeCustomSelect.refresh === 'function') {
+        await ankiNoteTypeCustomSelect.refresh();
+        ankiNoteTypeCustomSelect.select(modelSel.value, null, false);
+    }
+
         };
 
         // ----- Anki status -----
         const refreshAnkiStatus = async ()=>{
             if (!statusBar || !statusText || !statusHelp || !deckSel || !modelSel || !ankiBody) return;
-            statusBar.className='status-bar';
             try{
-                statusBar.classList.add('connected');
-                statusText.textContent='Anki connected';
+                window.updateUIConnectionStatus(true);
                 statusHelp.style.display='none';
 
                 const {deckName,modelName} = await loadSettings();
@@ -518,8 +794,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     deckSel.disabled = true;
                     modelSel.disabled = true;
                     ankiBody.style.opacity = '0.6';
-                    statusBar.classList.add('warning');
-                    statusText.textContent = 'No decks or note types found in Anki';
                     statusHelp.style.display = 'block';
                 } else {
                     deckSel.disabled = false;
@@ -528,24 +802,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 toggleSection(ankiBody, ankiToggle,true);
             }catch(err){
+                window.updateUIConnectionStatus(false);
                 if(err.message.includes('Failed to fetch')){
-                    statusBar.classList.add('disconnected');
-                    statusText.textContent='Anki connection failed';
                     statusHelp.style.display='block';
-
                     deckSel.disabled=true;
                     modelSel.disabled=true;
                     ankiBody.style.opacity='0.6';
                     toggleSection(ankiBody, ankiToggle,false);
                 }else{
                     console.error('Anki connection error:',err);
-                    statusBar.classList.add('warning');
-                    statusText.textContent=`Error: ${err.message}`;
-                    // Also disable dropdowns and show help on any error
+                    statusHelp.style.display='block';
                     deckSel.disabled=true;
                     modelSel.disabled=true;
                     ankiBody.style.opacity='0.6';
-                    statusHelp.style.display='block';
                     toggleSection(ankiBody, ankiToggle,false);
                 }
             }
@@ -570,9 +839,10 @@ document.addEventListener('DOMContentLoaded', () => {
               ? entry.generatedFront.substring(0, 100) + '...'
               : entry.generatedFront;
 
+            // Removed inline onclick from .history-entry-header
             return `
               <div class="history-entry">
-                <div class="history-entry-header" onclick="toggleHistoryEntry(this)">
+                <div class="history-entry-header">
                   <div>
                     <div class="history-entry-title">${entry.promptLabel}</div>
                     <div class="history-entry-meta">${date} • ${entry.pageTitle}</div>
@@ -608,6 +878,22 @@ document.addEventListener('DOMContentLoaded', () => {
               </div>
             `;
           }).join('');
+
+          // Add event listeners to all .history-entry-header elements
+          const headers = historyList.querySelectorAll('.history-entry-header');
+          headers.forEach(header => {
+            header.addEventListener('click', function () {
+              const entry = header.closest('.history-entry');
+              if (!entry) return;
+              const details = entry.querySelector('.history-details');
+              if (!details) return;
+              const toggleIcon = header.querySelector('.history-entry-toggle');
+              details.classList.toggle('active');
+              if (toggleIcon) {
+                toggleIcon.classList.toggle('active');
+              }
+            });
+          });
         };
 
         // Global function for toggling history entries
@@ -714,16 +1000,16 @@ document.addEventListener('DOMContentLoaded', () => {
             testApiBtn.addEventListener('click', async () => {
                 const key = keyInput.value.trim();
                 if (!validateApiKey(key)) {
-                    showNotification('Invalid API key format', true);
+                    window.showUINotification('Invalid API key format', 'error');
                     return;
                 }
                 testApiBtn.disabled = true;
                 testApiBtn.textContent = 'Testing…';
                 const {success, error} = await testOpenAI(key);
                 if (success) {
-                    showNotification('API connection successful');
+                    window.showUINotification('API connection successful');
                 } else {
-                    showNotification(error || 'API test failed', true);
+                    window.showUINotification(error || 'API test failed', 'error');
                 }
                 testApiBtn.disabled = false;
                 testApiBtn.textContent = 'Test';
@@ -758,72 +1044,456 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // Clear history button
-        if (clearHistoryBtn) {
-          clearHistoryBtn.addEventListener('click', async () => {
-            if (confirm('Are you sure you want to clear all prompt history?')) {
-              await chrome.storage.local.set({ promptHistory: [] });
-              await refreshPromptHistory();
-              showNotification('Prompt history cleared');
-            }
-          });
+        // Inline Clear History Confirmation UI
+        const clearHistoryBtn = document.getElementById('clear-history-btn');
+        const confirmClearHistoryArea = document.getElementById('confirm-clear-history-area');
+        const clearHistoryActionArea = document.getElementById('clear-history-action-area');
+        const confirmClearBtn = document.getElementById('confirm-clear-btn');
+        const cancelClearBtn = document.getElementById('cancel-clear-btn');
+
+        if (clearHistoryBtn && confirmClearHistoryArea && clearHistoryActionArea && confirmClearBtn && cancelClearBtn) {
+            clearHistoryBtn.addEventListener('click', () => {
+                clearHistoryActionArea.style.display = 'none';
+                confirmClearHistoryArea.style.display = 'flex';
+            });
+
+            cancelClearBtn.addEventListener('click', () => {
+                confirmClearHistoryArea.style.display = 'none';
+                clearHistoryActionArea.style.display = 'block';
+            });
+
+            confirmClearBtn.addEventListener('click', async () => {
+                await chrome.storage.local.set({ promptHistory: [] });
+                await refreshPromptHistory();
+                window.showUINotification('Prompt history cleared');
+                confirmClearHistoryArea.style.display = 'none';
+                clearHistoryActionArea.style.display = 'block';
+            });
         }
 
-        // *** CRITICAL FIX: Actually call initializeUI ***
-        initializeUI();
+        // ----- Hotkey Customization -----
+        // Remove all hotkey customization logic and UI references
+        // (currentHotkeyDisplay, recordHotkeyBtn, resetHotkeyBtn, hotkeyInstructions, displayHotkeyPreference, etc.)
 
-    } else {
-        console.error('Required elements not found. Check your HTML structure.');
-        return;
+        // Initialize UI
+        await initializeUI();
     }
 });
 
-/**
- * Programmatically expands or collapses a UI section.
- * @param {HTMLElement} sectionBodyEl - The .section-body element.
- * @param {HTMLElement} sectionToggleIconEl - The .section-toggle icon element.
- * @param {boolean} isExpanded - True to expand the section, false to collapse it.
- */
-function toggleSection(sectionBodyEl, sectionToggleIconEl, isExpanded) {
-    if (!sectionBodyEl) {
-        console.error("toggleSection: sectionBodyEl is null or undefined.");
-        return;
-    }
-    const sectionEl = sectionBodyEl.closest('.section');
-    if (!sectionEl) {
-        console.error("toggleSection: Could not find parent .section for the provided body element:", sectionBodyEl);
-        return;
-    }
-
-    if (isExpanded) {
-        sectionEl.classList.remove('collapsed');
-        if (sectionToggleIconEl) {
-            sectionToggleIconEl.classList.add('active');
-        }
+// Helper function for section toggling
+function toggleSection(body, toggle, expand) {
+    if (!body || !toggle) return;
+    const section = body.closest('.section');
+    if (!section) return;
+    
+    if (expand) {
+        section.classList.remove('collapsed');
+        toggle.classList.add('active');
     } else {
-        sectionEl.classList.add('collapsed');
-        if (sectionToggleIconEl) {
-            sectionToggleIconEl.classList.remove('active');
-        }
+        section.classList.add('collapsed');
+        toggle.classList.remove('active');
     }
-    // The actual show/hide animation (e.g., max-height) is handled by CSS rules
-    // based on the '.collapsed' class on 'sectionEl' and '.active' on 'sectionToggleIconEl'.
 }
 
-// Update history toggle logic to match .history-entry-toggle
-window.toggleHistoryEntry = function(headerElem) {
-  const entry = headerElem.closest('.history-entry');
-  if (!entry) return;
-  const details = entry.querySelector('.history-details');
-  if (!details) return;
-  // Use .history-entry-toggle for the icon
-  const toggleIcon = headerElem.querySelector('.history-entry-toggle');
-  details.classList.toggle('active');
-  if (toggleIcon) {
-    toggleIcon.classList.toggle('active');
-  }
-};
+// ----- PDF Review Section Element References -----
+const pdfReviewSection = document.getElementById('pdf-review-section');
+const pdfReviewToggle = pdfReviewSection?.querySelector('.section-toggle');
+const pdfReviewBody = pdfReviewSection?.querySelector('.section-body');
+const pdfReviewCount = document.getElementById('pdf-review-count');
+const pdfReviewList = document.getElementById('pdf-review-list');
+const refreshPdfReviewListBtn = document.getElementById('refresh-pdf-review-list-btn');
+const clearAllPdfReviewBtn = document.getElementById('clear-all-pdf-review-btn');
 
-// Remove all inline <script> blocks from your HTML (options.html).
-// Ensure only <script src="options.js"></script> and <script src="options_ui.js"></script> are used in your HTML.
-// This will resolve the Content Security Policy (CSP) error about inline scripts.
+// ----- PDF Review List Rendering -----
+let pdfReviewCardsCache = []; // Keep a local cache for event handlers
+
+async function renderPdfReviewList() {
+    console.log('[options.js] Rendering PDF review list...');
+    try {
+        const { pendingReviewPdfCards = [] } = await chrome.storage.local.get({ pendingReviewPdfCards: [] });
+        const cards = Array.isArray(pendingReviewPdfCards) ? pendingReviewPdfCards : [];
+        pdfReviewCardsCache = cards; // update cache
+        if (pdfReviewCount) {
+            pdfReviewCount.textContent = `${cards.length} card${cards.length === 1 ? '' : 's'} for review`;
+        }
+        if (!pdfReviewList) return;
+        if (cards.length === 0) {
+            pdfReviewList.innerHTML = `<div style="text-align: center; color: var(--muted); padding: 20px;">No PDF cards awaiting review.</div>`;
+            return;
+        }
+        pdfReviewList.innerHTML = cards.map(card => {
+            const date = new Date(card.timestamp).toLocaleString();
+            const snippet = card.generatedFront?.trim()
+                ? card.generatedFront.substring(0, 100)
+                : (card.sourceText?.substring(0, 100) || '');
+            // Deck and Model are displayed as plain, non-editable text
+            return `
+            <div class="history-entry" data-card-id="${card.id}">
+                <div class="history-entry-header">
+                    <div>
+                        <div class="history-entry-title">${card.originalPageTitle || 'Untitled PDF'}</div>
+                        <div class="history-entry-meta">${date}</div>
+                    </div>
+                    <span class="history-entry-toggle">▸</span>
+                </div>
+                <div class="history-details" style="display:none;"></div>
+                <div class="history-detail-row">
+                    <div class="history-detail-label">Snippet:</div>
+                    <div class="history-detail-content">${snippet || '<i>No preview</i>'}</div>
+                </div>
+                <div class="history-detail-row">
+                    <div class="history-detail-label">Deck:</div>
+                    <div class="history-detail-content"><span>${card.originalDeckName}</span></div>
+                </div>
+                <div class="history-detail-row">
+                    <div class="history-detail-label">Model:</div>
+                    <div class="history-detail-content"><span>${card.originalModelName}</span></div>
+                </div>
+                <div class="btn-row" style="margin-top: 10px;">
+                    <button class="btn btn-secondary edit-pdf-card-btn" data-card-id="${card.id}">Edit/View</button>
+                    <button class="btn btn-primary save-pdf-card-btn" data-card-id="${card.id}">Save to Anki</button>
+                    <button class="btn btn-secondary error delete-pdf-card-btn" data-card-id="${card.id}">Delete</button>
+                </div>
+            </div>
+            `;
+        }).join('');
+        console.log('[options.js] PDF review list rendered.');
+    } catch (err) {
+        console.error('[options.js] Error rendering PDF review list:', err);
+        if (pdfReviewList) {
+            pdfReviewList.innerHTML = `<div style="text-align: center; color: var(--error); padding: 20px;">Error loading PDF review cards.</div>`;
+        }
+    }
+}
+
+// Refresh PDF review list button
+if (refreshPdfReviewListBtn) {
+    refreshPdfReviewListBtn.addEventListener('click', () => {
+        renderPdfReviewList();
+    });
+}
+
+// Clear All PDF review cards button
+if (clearAllPdfReviewBtn) {
+    // Add confirmation UI like clear history
+    let confirmClearPdfArea = null;
+    let clearPdfActionArea = null;
+    let confirmClearPdfBtn = null;
+    let cancelClearPdfBtn = null;
+
+    // Setup confirmation UI if not already present
+    function setupPdfClearConfirmUI() {
+        // Only set up once
+        if (document.getElementById('confirm-clear-pdf-area')) return;
+
+        // Create confirmation area
+        confirmClearPdfArea = document.createElement('div');
+        confirmClearPdfArea.id = 'confirm-clear-pdf-area';
+        confirmClearPdfArea.style.display = 'none';
+        confirmClearPdfArea.style.alignItems = 'center';
+        confirmClearPdfArea.style.gap = '8px';
+
+        const confirmMsg = document.createElement('span');
+        confirmMsg.className = 'confirm-message';
+        confirmMsg.textContent = 'Are you sure? This cannot be undone.';
+
+        confirmClearPdfBtn = document.createElement('button');
+        confirmClearPdfBtn.className = 'btn btn-primary error';
+        confirmClearPdfBtn.textContent = 'Yes, Clear All';
+
+        cancelClearPdfBtn = document.createElement('button');
+        cancelClearPdfBtn.className = 'btn btn-secondary';
+        cancelClearPdfBtn.textContent = 'Cancel';
+
+        confirmClearPdfArea.appendChild(confirmMsg);
+        confirmClearPdfArea.appendChild(confirmClearPdfBtn);
+        confirmClearPdfArea.appendChild(cancelClearPdfBtn);
+
+        // Insert after the action area
+        clearPdfActionArea = clearAllPdfReviewBtn.parentNode;
+        clearPdfActionArea.parentNode.insertBefore(confirmClearPdfArea, clearPdfActionArea.nextSibling);
+
+        // Handlers
+        cancelClearPdfBtn.addEventListener('click', () => {
+            confirmClearPdfArea.style.display = 'none';
+            clearPdfActionArea.style.display = '';
+        });
+
+        confirmClearPdfBtn.addEventListener('click', async () => {
+            try {
+                await chrome.storage.local.set({ pendingReviewPdfCards: [] });
+                await renderPdfReviewList();
+                window.showUINotification('All PDF review cards cleared.');
+            } catch (err) {
+                console.error('[PDF Review] Error clearing all PDF review cards:', err);
+                window.showUINotification('Failed to clear PDF review cards.', 'error');
+            }
+            confirmClearPdfArea.style.display = 'none';
+            clearPdfActionArea.style.display = '';
+        });
+    }
+
+    setupPdfClearConfirmUI();
+
+    clearAllPdfReviewBtn.addEventListener('click', () => {
+        // Hide the action area, show confirmation
+        if (!confirmClearPdfArea) setupPdfClearConfirmUI();
+        clearPdfActionArea = clearAllPdfReviewBtn.parentNode;
+        clearPdfActionArea.style.display = 'none';
+        confirmClearPdfArea.style.display = 'flex';
+    });
+}
+
+// Event delegation for PDF review card buttons
+if (pdfReviewList) {
+    pdfReviewList.addEventListener('click', async (e) => {
+        const target = e.target;
+        if (!target) return;
+        const cardId = target.getAttribute('data-card-id');
+        if (!cardId) return;
+
+        // Find the card data from cache
+        const card = pdfReviewCardsCache.find(c => c.id === cardId);
+        if (!card) {
+            console.warn('[options.js] Card not found in cache for ID:', cardId);
+            return;
+        }
+
+        // Edit/View functionality with editing UI
+        if (target.classList.contains('edit-pdf-card-btn')) {
+            const entry = target.closest('.history-entry');
+            if (!entry) return;
+            const details = entry.querySelector('.history-details');
+            if (!details) return;
+
+            // If already editing, hide and reset
+            if (details.getAttribute('data-editing') === 'true') {
+                details.innerHTML = '';
+                details.style.display = 'none';
+                details.removeAttribute('data-editing');
+                target.textContent = 'Edit/View';
+                return;
+            }
+
+            // Build editing UI (Deck/Model as read-only text)
+            const isCloze = !!card.isCloze;
+            const frontVal = card.generatedFront || (isCloze ? '' : card.sourceText || '');
+            const backVal = isCloze ? (card.generatedClozeText || '') : (card.sourceText || '');
+            details.innerHTML = `
+                <div style="margin-bottom:8px;">
+                    <label><b>Front:</b>
+                        <textarea class="pdf-edit-front" style="width:100%;min-height:60px;padding:6px;border-radius:4px;margin-top:4px;">${frontVal}</textarea>
+                    </label>
+                </div>
+                <div style="margin-bottom:8px;">
+                    <label><b>Back (${isCloze ? 'Cloze' : 'Basic'}):</b>
+                        <textarea class="pdf-edit-back" style="width:100%;min-height:80px;padding:6px;border-radius:4px;margin-top:4px;">${backVal}</textarea>
+                    </label>
+                </div>
+                <div style="margin-bottom:8px;">
+                    <b>Deck:</b> <span>${card.originalDeckName}</span>
+                    &nbsp;&nbsp;
+                    <b>Model:</b> <span>${card.originalModelName}</span>
+                </div>
+                <div style="margin-bottom:8px;">
+                    <b>Source:</b> ${card.originalPageTitle}
+                    ${card.originalPageUrl ? `<br><a href="${card.originalPageUrl}" target="_blank">${card.originalPageUrl}</a>` : ''}
+                </div>
+                <div class="btn-row" style="margin-top:10px;">
+                    <button class="btn btn-primary done-edit-pdf-card-btn" data-card-id="${card.id}">Done Editing</button>
+                    <button class="btn btn-secondary cancel-edit-pdf-card-btn" data-card-id="${card.id}">Cancel Edit</button>
+                </div>
+            `;
+            details.style.display = 'block';
+            details.setAttribute('data-editing', 'true');
+            target.textContent = 'Hide Details';
+
+            // Done Editing handler
+            details.querySelector('.done-edit-pdf-card-btn').onclick = async function(ev) {
+                const cardId = this.getAttribute('data-card-id');
+                const frontVal = details.querySelector('.pdf-edit-front')?.value || '';
+                const backVal = details.querySelector('.pdf-edit-back')?.value || '';
+                console.log('[PDF Review][Edit] Done Editing card ID:', cardId, 'New Front:', frontVal, 'New Back:', backVal);
+
+                try {
+                    const { pendingReviewPdfCards = [] } = await chrome.storage.local.get({ pendingReviewPdfCards: [] });
+                    console.log('[PDF Review][Edit] Cards before update:', pendingReviewPdfCards.map(c => ({id: c.id, generatedFront: c.generatedFront, generatedClozeText: c.generatedClozeText, sourceText: c.sourceText})));
+                    const idx = pendingReviewPdfCards.findIndex(c => c.id === cardId);
+                    if (idx !== -1) {
+                        const cardToEdit = pendingReviewPdfCards[idx];
+                        console.log('[PDF Review][Edit] Found card to edit:', cardToEdit);
+                        if (cardToEdit.isCloze) {
+                            cardToEdit.generatedClozeText = backVal;
+                            cardToEdit.generatedFront = frontVal;
+                            console.log('[PDF Review][Edit] Updated Cloze card:', cardToEdit);
+                        } else {
+                            cardToEdit.generatedFront = frontVal;
+                            cardToEdit.sourceText = backVal;
+                            console.log('[PDF Review][Edit] Updated Basic card:', cardToEdit);
+                        }
+                        // Save updated array
+                        await chrome.storage.local.set({ pendingReviewPdfCards });
+                        console.log('[PDF Review][Edit] Saved updated pendingReviewPdfCards to storage.');
+                        // Update local cache
+                        pdfReviewCardsCache = pendingReviewPdfCards;
+                        console.log('[PDF Review][Edit] Updated pdfReviewCardsCache.');
+                    } else {
+                        console.warn('[PDF Review][Edit] Card ID not found in pendingReviewPdfCards:', cardId);
+                    }
+                } catch (err) {
+                    console.error('[PDF Review][Edit] Error saving edits for card ID:', cardId, err);
+                    window.showUINotification('Failed to save edits locally.', 'error');
+                    return;
+                }
+
+                details.style.display = 'none';
+                details.removeAttribute('data-editing');
+                target.textContent = 'Edit/View';
+                await renderPdfReviewList();
+                window.showUINotification('Edits staged locally. Click "Save to Anki" to send.');
+            };
+
+            // Cancel Edit handler
+            details.querySelector('.cancel-edit-pdf-card-btn').onclick = function(ev) {
+                details.innerHTML = '';
+                details.style.display = 'none';
+                details.removeAttribute('data-editing');
+                target.textContent = 'Edit/View';
+                console.log('[options.js] Cancelled editing PDF card ID:', cardId);
+            };
+
+            console.log('[options.js] Editing/Viewing PDF card ID:', cardId, card);
+            return;
+        }
+
+        // Save to Anki functionality (uses edited values if present)
+        if (target.classList.contains('save-pdf-card-btn')) {
+            const cardId = target.getAttribute('data-card-id');
+            // Always get the latest card object from the cache (should have edits if staged)
+            const cardToSave = pdfReviewCardsCache.find(c => c.id === cardId);
+            if (!cardToSave) {
+                window.showUINotification("Card not found in review queue.", 'error');
+                console.error('[PDF Review][Save] Card not found in cache for ID:', cardId);
+                return;
+            }
+
+            let frontVal, backVal, deckVal, modelVal;
+            if (cardToSave.isCloze) {
+                frontVal = cardToSave.generatedFront || '';
+                backVal = cardToSave.generatedClozeText || '';
+            } else {
+                frontVal = cardToSave.generatedFront || '';
+                backVal = cardToSave.sourceText || '';
+            }
+            deckVal = cardToSave.originalDeckName;
+            modelVal = cardToSave.originalModelName;
+
+            const cardDataForSave = {
+                front: frontVal,
+                backHtml: backVal,
+                deckName: deckVal,
+                modelName: modelVal
+            };
+
+            console.log('[PDF Review][SaveOptimistic] Initiating save for card ID:', cardId, 'Data:', cardDataForSave);
+
+            // Optimistic UI update: remove from storage and UI immediately
+            (async () => {
+                try {
+                    const { pendingReviewPdfCards = [] } = await chrome.storage.local.get({ pendingReviewPdfCards: [] });
+                    const updatedCards = pendingReviewPdfCards.filter(c => c.id !== cardId);
+                    await chrome.storage.local.set({ pendingReviewPdfCards: updatedCards });
+                    pdfReviewCardsCache = updatedCards;
+                    console.log('[PDF Review][SaveOptimistic] Card removed from local storage and cache for card ID:', cardId);
+                    await renderPdfReviewList();
+                    window.showUINotification('Card sent for Anki processing. System notification will confirm outcome.');
+                } catch (err) {
+                    console.error('[PDF Review][SaveOptimistic] Error removing card from local storage for card ID:', cardId, err);
+                    window.showUINotification('Failed to update review queue after sending card.', 'error');
+                }
+            })();
+
+            // Send to background for actual processing (response is only for logging)
+            chrome.runtime.sendMessage({ action: "saveFinalizedPdfCard", cardData: cardDataForSave }, (response) => {
+                console.log('[PDF Review][SaveOptimistic][Callback] Received response from background for card ID:', cardId, 'Raw Response:', response, 'Last Error:', chrome.runtime.lastError);
+                if (chrome.runtime.lastError) {
+                    // Only show UI notification if the error is NOT the "port closed" error
+                    if (chrome.runtime.lastError.message !== "The message port closed before a response was received.") {
+                        window.showUINotification('Communication error with background: ' + chrome.runtime.lastError.message, 'error');
+                    }
+                    // Always log for debugging
+                    console.error('[PDF Review][SaveOptimistic][Callback] Error from sendMessage. Card ID:', cardId, 'Error:', chrome.runtime.lastError.message);
+                } else if (response && !response.success) {
+                    console.error('[PDF Review][SaveOptimistic][Callback] Background reported failure. Card ID:', cardId, 'Response Error:', response.error);
+                    window.showUINotification('Background reported an issue processing the card: ' + response.error, 'error');
+                } else if (response && response.success) {
+                    console.log('[PDF Review][SaveOptimistic][Callback] Background successfully processed card ID:', cardId);
+                    // UI was already updated optimistically, so this is mostly for logging or any minor follow-up.
+                }
+            });
+            return;
+        }
+
+        // Delete PDF review card with two-click confirmation
+        if (target.classList.contains('delete-pdf-card-btn')) {
+            // If already in confirm-delete state, proceed with deletion
+            if (target.classList.contains('confirm-delete-active')) {
+                console.log('[PDF Review][Delete] Confirming delete for card ID:', cardId);
+                target.textContent = 'Delete';
+                target.classList.remove('confirm-delete-active');
+                target.removeAttribute('data-confirm-delete-timestamp');
+                try {
+                    const { pendingReviewPdfCards = [] } = await chrome.storage.local.get({ pendingReviewPdfCards: [] });
+                    console.log('[PDF Review][Delete] Cards before filtering:', pendingReviewPdfCards.map(c => c.id));
+                    const updatedCardsArray = pendingReviewPdfCards.filter(c => c.id !== cardId);
+                    console.log('[PDF Review][Delete] Filtering out card ID:', cardId);
+                    console.log('[PDF Review][Delete] Cards after filtering:', updatedCardsArray.map(c => c.id));
+                    await chrome.storage.local.set({ pendingReviewPdfCards: updatedCardsArray });
+                    console.log('[PDF Review][Delete] Storage updated after deletion.');
+                    await renderPdfReviewList();
+                    console.log('[PDF Review][Delete] List re-rendered after deletion.');
+                    window.showUINotification('PDF review card deleted.');
+                } catch (err) {
+                    console.error('[PDF Review][Delete] Error deleting card ID:', cardId, err);
+                    window.showUINotification('Failed to delete PDF review card.', 'error');
+                }
+                return;
+            }
+
+            // Reset any other confirm-delete-active buttons
+            const allDeleteBtns = pdfReviewList.querySelectorAll('.delete-pdf-card-btn.confirm-delete-active');
+            allDeleteBtns.forEach(btn => {
+                if (btn !== target) {
+                    btn.textContent = 'Delete';
+                    btn.classList.remove('confirm-delete-active');
+                    btn.removeAttribute('data-confirm-delete-timestamp');
+                }
+            });
+
+            // Set this button to confirm-delete state
+            target.textContent = 'Confirm Delete?';
+            target.classList.add('confirm-delete-active');
+            target.setAttribute('data-confirm-delete-timestamp', Date.now());
+            console.log('[PDF Review][Delete] Staging delete for card ID:', cardId, 'Button text changed.');
+            return;
+        }
+
+        // ...existing code...
+    });
+
+    // Global click handler to reset confirm-delete state if clicking outside delete buttons
+    document.addEventListener('click', (event) => {
+        // Only reset if click is outside any .delete-pdf-card-btn inside pdfReviewList
+        if (!pdfReviewList.contains(event.target) || !event.target.classList.contains('delete-pdf-card-btn')) {
+            const allDeleteBtns = pdfReviewList.querySelectorAll('.delete-pdf-card-btn.confirm-delete-active');
+            allDeleteBtns.forEach(btn => {
+                btn.textContent = 'Delete';
+                btn.classList.remove('confirm-delete-active');
+                btn.removeAttribute('data-confirm-delete-timestamp');
+            });
+            if (allDeleteBtns.length > 0) {
+                console.log('[PDF Review][Delete] Clicked outside, resetting confirm-delete states.');
+            }
+        }
+    });
+}

@@ -22,7 +22,7 @@ export async function generateFrontWithRetry(text, settings) {
   );
 }
 
-// Update generateFront to accept template directly
+// Update generateFront to robustly log and handle non-JSON responses
 async function generateFront(text, pageTitle, pageUrl, openaiKey, gptModel, template) {
   if (!openaiKey || !openaiKey.trim() || !openaiKey.startsWith('sk-')) {
     throw new Error(
@@ -59,14 +59,26 @@ async function generateFront(text, pageTitle, pageUrl, openaiKey, gptModel, temp
     }),
   });
 
-  const data = await res.json();
-  console.log("OpenAI response:", data);
-  
+  const responseText = await res.text();
+
   if (!res.ok) {
-    throw new Error(data.error?.message || JSON.stringify(data, null, 2));
+    console.error('[chatgptProvider][generateFront] OpenAI API Error. Status:', res.status, 'Response Text (first 500 chars):', responseText.substring(0, 500));
+    throw new Error(`OpenAI API Error (${res.status}): ${responseText.substring(0, 200)}...`);
   }
 
-  return data.choices[0].message.content.trim();
+  try {
+    const data = JSON.parse(responseText);
+    console.log("[chatgptProvider][generateFront] OpenAI response data:", data);
+    if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
+      console.error('[chatgptProvider][generateFront] OpenAI response JSON is missing expected structure. Data:', data, 'Original text:', responseText.substring(0, 500));
+      throw new Error('OpenAI response JSON structure is invalid.');
+    }
+    return data.choices[0].message.content.trim();
+  } catch (jsonParseError) {
+    console.error('[chatgptProvider][generateFront] Failed to parse OpenAI response as JSON. Error:', jsonParseError);
+    console.error('[chatgptProvider][generateFront] Original non-JSON response text from OpenAI (first 500 chars):', responseText.substring(0, 500));
+    throw new Error('OpenAI returned a non-JSON response. Check background console for original text. Parse Error: ' + jsonParseError.message);
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -115,9 +127,26 @@ async function generateCloze(
       })
     });
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error?.message || JSON.stringify(data));
-    return data.choices[0].message.content.trim();
+    const responseText = await res.text();
+
+    if (!res.ok) {
+      console.error('[chatgptProvider][generateCloze] OpenAI API Error. Status:', res.status, 'Response Text (first 500 chars):', responseText.substring(0, 500));
+      throw new Error(`OpenAI API Error (${res.status}): ${responseText.substring(0, 200)}...`);
+    }
+
+    try {
+      const data = JSON.parse(responseText);
+      console.log("[chatgptProvider][generateCloze] OpenAI response data:", data);
+      if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
+        console.error('[chatgptProvider][generateCloze] OpenAI response JSON is missing expected structure. Data:', data, 'Original text:', responseText.substring(0, 500));
+        throw new Error('OpenAI response JSON structure is invalid.');
+      }
+      return data.choices[0].message.content.trim();
+    } catch (jsonParseError) {
+      console.error('[chatgptProvider][generateCloze] Failed to parse OpenAI response as JSON. Error:', jsonParseError);
+      console.error('[chatgptProvider][generateCloze] Original non-JSON response text from OpenAI (first 500 chars):', responseText.substring(0, 500));
+      throw new Error('OpenAI returned a non-JSON response. Check background console for original text. Parse Error: ' + jsonParseError.message);
+    }
 }
 
 // Update generateClozeWithRetry to pass openaiKey and gptModel

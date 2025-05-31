@@ -38,6 +38,7 @@ body {
   padding: 0 var(--gap) var(--gap) var(--gap);
   line-height: 1.5;
   margin: 0 auto;
+  /* Remove any top padding here if present */
 }
 
 /* Header */
@@ -45,8 +46,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-block-end: var(--gap);
-  padding-block-end: var(--gap-sm);
+  margin-block-end: 0; /* Remove bottom margin */
+  padding-block-end: calc(var(--gap-sm) + 8px); /* Slightly increase bottom padding to fill space */
   border-block-end: 1px solid var(--border);
   gap: var(--gap-sm);
 }
@@ -74,7 +75,7 @@ body {
 
 /* Notification */
 .notification {
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   padding: 14px 20px;
@@ -90,11 +91,13 @@ body {
   color: #fff;
   box-shadow: var(--shadow);
   min-height: 44px;
+  z-index: 9999; /* <-- ensure notification is above other content */
 }
 .notification.error {
   background: linear-gradient(135deg, var(--error), #b91c1c);
 }
 .notification.show {
+  display: flex;
   opacity: 1;
   transform: translateY(0);
   pointer-events: auto;
@@ -106,6 +109,7 @@ body {
   align-items: center;
   gap: var(--gap-sm);
   margin-block-end: var(--gap);
+  margin-block-start: 0; /* No top margin */
   padding: 10px 16px;
   border-radius: var(--radius-sm);
   background: var(--border-light);
@@ -478,6 +482,16 @@ body {
   flex-wrap: wrap;
   gap: 8px;
   margin-block: var(--gap-sm);
+  justify-content: center; /* center all buttons horizontally */
+}
+
+/* Center text for GPT info and API key instructions */
+.gpt-info,
+.api-key-instructions {
+  text-align: center;
+  margin: 0 auto var(--gap-sm) auto;
+  display: block;
+  width: 100%;
 }
 
 /* Helper Text & Boxes */
@@ -526,7 +540,7 @@ body {
 /* Footer */
 .footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center; /* center the footer links */
   align-items: center;
   gap: var(--gap-sm);
   margin-block-start: var(--gap);
@@ -647,6 +661,31 @@ body {
   justify-content: space-between;
   align-items: center;
   margin-block-end: var(--gap-sm);
+  flex-wrap: wrap;
+}
+
+#clear-history-action-area,
+#confirm-clear-history-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.confirm-message {
+  font-size: 0.95rem;
+  color: var(--muted);
+  margin-inline-end: var(--gap-sm);
+}
+
+.btn.error {
+  background-color: var(--error);
+  border-color: var(--error);
+  color: #fff;
+}
+.btn.error:hover,
+.btn.error:focus {
+  background-color: #d32f2f;
+  border-color: #d32f2f;
 }
 
 /* System prompt styling */
@@ -671,4 +710,170 @@ body {
 select option:disabled {
   color: #495057 !important;
   font-weight: bold;
+}
+
+/* Form label and info button alignment */
+.form-label-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-block-end: 4px;
+}
+.form-label-group .form-label {
+  margin-block-end: 0;
+}
+.info-button {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  border-radius: 50%;
+  transition: background-color var(--transition), color var(--transition);
+}
+.info-button:hover,
+.info-button:focus {
+  color: var(--accent);
+}
+.info-button .info-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Screen-reader only text */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Collapsible help content */
+.collapsible-help {
+  background-color: var(--bg);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--gap-sm);
+  margin-block-end: var(--gap-sm);
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.3s var(--transition), opacity 0.3s var(--transition), padding-top 0.3s var(--transition), padding-bottom 0.3s var(--transition);
+}
+.collapsible-help.shown {
+  max-height: 200px;
+  opacity: 1;
+  padding-top: var(--gap-sm);
+  padding-bottom: var(--gap-sm);
+}
+.collapsible-help .help-text {
+  margin-block: 0;
+  font-size: 0.9rem;
+}
+
+/* Custom Select Styles */
+.custom-select-wrapper {
+  position: relative;
+  font-family: var(--font);
+}
+
+.custom-select-trigger {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  padding-right: 30px;
+  position: relative;
+  user-select: none;
+}
+
+.custom-select-trigger .selected-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-grow: 1;
+}
+
+.custom-select-arrow {
+  width: 18px;
+  height: 18px;
+  background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' fill='gray' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4 6l4 4 4-4' stroke='currentColor' stroke-width='2' fill='none' fill-rule='evenodd'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%) rotate(0deg);
+  transition: transform var(--transition);
+  pointer-events: none;
+}
+
+.custom-select-trigger[aria-expanded="true"] .custom-select-arrow {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+.custom-select-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  z-index: 10;
+  max-height: 200px;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+  display: none;
+}
+
+.custom-select-options.shown {
+  display: block;
+}
+
+.custom-select-option {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color var(--transition);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.custom-select-option:hover,
+.custom-select-option.selected,
+.custom-select-option:focus {
+  background-color: var(--border-light);
+  color: var(--fg);
+}
+
+/* Optional: Add a subtle search input at the top of the dropdown */
+.custom-select-search {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.custom-select-search input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font);
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+.custom-select-search input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.15);
+  outline: none;
 }

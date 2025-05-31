@@ -16,13 +16,16 @@ document.addEventListener('DOMContentLoaded', () => {
      * @param {string} [type] - The type of notification (e.g., 'error').
      */
     window.showUINotification = function(message, type = '') {
+        console.log('[options_ui.js][showUINotification] Called with message:', message, 'type:', type);
         const notif = document.getElementById('notification');
+        console.log('[options_ui.js][showUINotification] notif element:', notif);
         if (!notif) return;
         
         notif.textContent = message;
         notif.className = 'notification';
         if (type === 'error') notif.classList.add('error');
         notif.classList.add('show');
+        console.log('[options_ui.js][showUINotification] notif.classList.add("show") called');
         
         // Clear any existing timeout
         if (notificationTimeouts.has(notif)) {
@@ -33,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const timeout = setTimeout(() => {
             notif.classList.remove('show');
             notificationTimeouts.delete(notif);
+            console.log('[options_ui.js][showUINotification] notif.classList.remove("show") after timeout');
         }, 3500);
         notificationTimeouts.set(notif, timeout);
     };
@@ -56,4 +60,26 @@ document.addEventListener('DOMContentLoaded', () => {
             statusTextEl.textContent = STATUS_TEXT.offline;
         }
     };
+
+    // Prompt Template Help Toggle
+    const togglePromptHelpButton = document.getElementById('toggle-prompt-help');
+    const promptHelpContent = document.getElementById('prompt-help-content');
+    if (togglePromptHelpButton && promptHelpContent) {
+        togglePromptHelpButton.addEventListener('click', () => {
+            const isExpanded = togglePromptHelpButton.getAttribute('aria-expanded') === 'true';
+            togglePromptHelpButton.setAttribute('aria-expanded', String(!isExpanded));
+            if (!isExpanded) {
+                promptHelpContent.hidden = false;
+                setTimeout(() => {
+                    promptHelpContent.classList.add('shown');
+                }, 10);
+            } else {
+                promptHelpContent.classList.remove('shown');
+                promptHelpContent.addEventListener('transitionend', function handler() {
+                    promptHelpContent.hidden = true;
+                    promptHelpContent.removeEventListener('transitionend', handler);
+                });
+            }
+        });
+    }
 });

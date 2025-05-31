@@ -13,7 +13,7 @@
     <div class="header">
         <img src="icons/icon64.png" alt="Zawrick Icon" />
         <h1>Zawrick</h1>
-        <span class="version">v2.0</span>
+        <span class="version">v1.3</span>
     </div>
 
     <!-- Inline notification banner -->
@@ -49,12 +49,26 @@
             <div class="section-body" id="anki-body">
                 <div class="section-body-content">
                     <div class="form-group">
-                        <label class="form-label" for="anki-deck">Deck to use</label>
-                        <select id="anki-deck" class="form-select"></select>
+                        <label class="form-label" for="anki-deck-custom-trigger">Deck to use</label>
+                        <div class="custom-select-wrapper" id="anki-deck-custom-wrapper">
+                            <button type="button" id="anki-deck-custom-trigger" class="form-input custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                                <span id="anki-deck-selected-value" class="selected-value"></span>
+                                <span class="custom-select-arrow"></span>
+                            </button>
+                            <div id="anki-deck-options" class="custom-select-options" role="listbox" style="display: none;"></div>
+                        </div>
+                        <select id="anki-deck" class="form-select" style="display: none;"></select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="anki-note-type">Note Model to use</label>
-                        <select id="anki-note-type" class="form-select"></select>
+                        <label class="form-label" for="anki-note-type-custom-trigger">Note Model to use</label>
+                        <div class="custom-select-wrapper" id="anki-note-type-custom-wrapper">
+                            <button type="button" id="anki-note-type-custom-trigger" class="form-input custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                                <span id="anki-note-type-selected-value" class="selected-value"></span>
+                                <span class="custom-select-arrow"></span>
+                            </button>
+                            <div id="anki-note-type-options" class="custom-select-options" role="listbox" style="display: none;"></div>
+                        </div>
+                        <select id="anki-note-type" class="form-select" style="display: none;"></select>
                     </div>
                 </div>
             </div>
@@ -99,6 +113,7 @@
                             </button>
                         </div>
                     </div>
+
                     <div class="form-group">
                         <label class="form-label" for="prompt-select">Saved Prompts</label>
                         <select id="prompt-select" class="form-select"></select>
@@ -108,7 +123,23 @@
                         <input id="profile-name" type="text" class="form-input" />
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="gpt-prompt">Template ({{text}}, {{title}}, {{url}})</label>
+                        <div class="form-label-group">
+                            <label class="form-label" for="gpt-prompt">Prompt Template</label>
+                            <button type="button" id="toggle-prompt-help" class="info-button" aria-expanded="false" aria-controls="prompt-help-content">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" class="info-icon">
+                                  <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
+                                </svg>
+                                <span class="sr-only">Show prompt formatting help</span>
+                            </button>
+                        </div>
+                        <div id="prompt-help-content" class="collapsible-help" hidden>
+                            <div class="help-text">
+                                Use placeholders like <code class="template-var">{{text}}</code> (selected text),
+                                <code class="template-var">{{title}}</code> (page title), and
+                                <code class="template-var">{{url}}</code> (page URL) in your template.
+                                This allows the extension to dynamically insert the relevant information from the web page into your prompt.
+                            </div>
+                        </div>
                         <textarea id="gpt-prompt" rows="4" class="form-textarea"></textarea>
                     </div>
                     <div id="prompt-limit-msg" class="muted-text">
@@ -146,8 +177,15 @@
         <div class="section-body">
           <div class="section-body-content">
             <div class="history-controls">
-              <button id="clear-history" class="btn btn-secondary">Clear History</button>
-              <span class="history-count" id="history-count"></span>
+                <div id="clear-history-action-area">
+                    <button id="clear-history-btn" class="btn btn-secondary">Clear History</button>
+                </div>
+                <div id="confirm-clear-history-area" style="display: none;">
+                    <span class="confirm-message">Are you sure? This cannot be undone.</span>
+                    <button id="confirm-clear-btn" class="btn btn-primary error">Yes, Clear All</button>
+                    <button id="cancel-clear-btn" class="btn btn-secondary">Cancel</button>
+                </div>
+                <span class="history-count" id="history-count"></span>
             </div>
             <div class="history-list" id="history-list">
               <!-- Example entry structure -->
@@ -168,6 +206,39 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- PDF Review Section -->
+    <div class="section" id="pdf-review-section">
+        <div class="section-header">
+            <div>
+                <div class="section-title">📄 PDF Cards for Review</div>
+                <div class="section-subtitle">
+                    Edit and save cards created from PDF selections<br>
+                    <span class="help-text" style="font-size: 13px;">
+                        Whether PDF cards go here or auto-save depends on the global <b>Always review cards</b> setting above.
+                    </span>
+                </div>
+            </div>
+            <span class="section-toggle" tabindex="0" aria-label="Toggle section">▾</span>
+        </div>
+        <div class="section-body-wrapper">
+            <div class="section-body" id="pdf-review-body">
+                <div class="section-body-content">
+                    <div class="history-controls">
+                        <button id="refresh-pdf-review-list-btn" class="btn btn-secondary">Refresh List</button>
+                        <button id="clear-all-pdf-review-btn" class="btn btn-secondary error">Clear All Review Cards</button>
+                        <span class="history-count" id="pdf-review-count">0 cards for review</span>
+                    </div>
+                    <p class="help-text" style="margin-bottom: var(--gap-sm);">
+                        Note: PDF-sourced cards appear here for review if the global "Always review cards before saving" setting (in GPT Settings above) is enabled, or if automatic processing encountered an issue. If that setting is disabled and processing is successful, PDF cards are sent directly to Anki (or the sync queue) with a system notification.
+                    </p>
+                    <div id="pdf-review-list" class="history-list">
+                        <div style="text-align: center; color: var(--muted); padding: 20px;">Loading PDF cards for review...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="footer">

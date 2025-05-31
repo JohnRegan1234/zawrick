@@ -1,7 +1,11 @@
+console.log('[ContentScript] Loaded and running on:', window.location.href);
+
 let toastEl = null;
 let toastHideTimeout = null;
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    console.log('[ContentScript] Message received:', msg, 'Sender:', sender);
+
     // 1) Copy the selected text as HTML
     if (msg.action === "getSelectionHtml") {
         let html = "";
@@ -19,6 +23,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     // 2) Prompt user for card front when GPT is disabled
     if (msg.action === "manualFront") {
+        console.log('[ContentScript] "manualFront" action received. Preparing to display UI.');
+
         // 1) Create overlay
         const isCloze = /cloze/i.test(msg.modelName);
         const overlay = document.createElement("div");
