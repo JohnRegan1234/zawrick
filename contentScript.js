@@ -45,16 +45,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // 2) Create dialog box
         const box = document.createElement("div");
         box.id = "manual-box";
+        Object.assign(box.style, {
+            background: "white",
+            borderRadius: "12px",
+            padding: "24px",
+            maxWidth: isCloze ? "800px" : "600px", // Wider for cloze cards
+            width: "90%",
+            maxHeight: "85vh",
+            overflow: "auto",
+            position: "relative",
+            boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
+            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        });
 
         // 3) Error HTML (if any)
         let errorHtml = "";
         if (msg.error) {
             errorHtml = `
-            <div id="manual-error" class="manual-error">
+            <div id="manual-error" style="background: #fee2e2; border: 1px solid #fecaca; color: #b91c1c; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
               ⚠️ GPT generation failed.<br>
-              <code>${msg.error}</code><br>
-              
-              <span style="font-size:1.16em; font-weight:500">💡 You can still create the card manually below.</span>
+              <code style="background: rgba(185,28,28,0.1); padding: 2px 6px; border-radius: 4px;">${msg.error}</code><br>
+              <span style="font-size:1.05em; font-weight:500; margin-top:8px; display:block;">💡 You can still create the card manually below.</span>
             </div>
           `;
         }
@@ -70,7 +81,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const deckDisabled = msg.ankiOnline ? "" : "disabled";
         const deckHelp = msg.ankiOnline
             ? ""
-            : `<span class="muted-text" style="font-size:12px; margin-top:6px;">
+            : `<span style="font-size:12px; color:#6b7280; margin-top:6px; display:block;">
                 🟠 Deck can only be changed when Anki is connected
             </span>`;
 
@@ -80,110 +91,157 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             : [deckName];
 
         const deckSelectHtml = `
-            <label style="display:flex; flex-direction:column; margin-top:12px;">
-              <span>Deck</span>
-              <select id="manual-deck" ${deckDisabled}>
+            <div style="margin-bottom: 16px;">
+              <label style="display:block; font-weight:500; margin-bottom:4px; color:#374151;">Deck</label>
+              <select id="manual-deck" ${deckDisabled} style="width:100%; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; background:#fff;">
                 ${options.map(d =>
             `<option value="${d}"${d === deckName ? " selected" : ""}>${d}</option>`
         ).join("")}
               </select>
               ${deckHelp}
-            </label>
+            </div>
           `;
 
-        // 6) Note model notice
-        const modelNotice = isCloze ?
-          `<div class="muted-text" style="font-size:12px;">
-             ✨ Cloze card – edit the text below and add {{c1::…}} deletions
-           </div>` : "";
+        // 6) Build the appropriate interface based on card type
+        let contentHtml = "";
+        
+        if (isCloze) {
+            // Redesigned cloze interface with editable area and preview
+            const clozeContent = msg.frontHtml || msg.originalSelectionHtml || "";
+            contentHtml = `
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                    <!-- Editable Area -->
+                    <div>
+                        <label for="manual-back-input" style="display:block; font-weight:500; margin-bottom:8px; color:#374151;">
+                            Edit Cloze Text
+                        </label>
+                        <div style="font-size:12px; color:#6b7280; margin-bottom:8px;">
+                            Add {{c1::deletions}}, {{c2::more deletions}}, etc.
+                        </div>
+                        <textarea id="manual-back-input" 
+                                  style="width:100%; height:200px; padding:12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; font-family:monospace; resize:vertical; line-height:1.5;"
+                                  placeholder="Enter your cloze text with {{c1::deletions}}...">${clozeContent}</textarea>
+                    </div>
+                    
+                    <!-- Preview Area -->
+                    <div>
+                        <label style="display:block; font-weight:500; margin-bottom:8px; color:#374151;">
+                            Preview (Card Back)
+                        </label>
+                        <div style="font-size:12px; color:#6b7280; margin-bottom:8px;">
+                            This is how your card will appear in Anki
+                        </div>
+                        <div id="manual-back-preview" 
+                             style="width:100%; height:200px; padding:12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb; overflow-y:auto; font-size:14px; line-height:1.5;">
+                            ${msg.backHtml || clozeContent}
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else {
+            // Standard interface for basic cards
+            contentHtml = `
+                <div style="margin-bottom: 20px;">
+                    <label for="manual-front-input" style="display:block; font-weight:500; margin-bottom:8px; color:#374151;">
+                        Question for the front:
+                    </label>
+                    <textarea id="manual-front-input"
+                              style="width:100%; height:80px; padding:12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; resize:vertical;"
+                              placeholder="Type your question here…">${msg.frontHtml || ""}</textarea>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <label style="display:block; font-weight:500; margin-bottom:8px; color:#ff6600;">Back of the card (preview):</label>
+                    <div style="border-top: 2px solid #ff6600; padding-top: 12px;">
+                        <div style="padding:12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb; max-height:200px; overflow-y:auto;">
+                            ${msg.backHtml}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
 
-        // 7) Build inner HTML
-        box.innerHTML += `
-        ${errorHtml}
-        <h2 id="manual-heading" style="margin:0 0 8px;font-size:16px;">${dialogHeading}</h2>
-        <div style="margin-bottom:12px">
+        // 7) Build complete dialog HTML
+        box.innerHTML = `
+            ${errorHtml}
+            <h2 style="margin:0 0 20px; font-size:20px; color:#1f2937; font-weight:600;">${dialogHeading}</h2>
             ${deckSelectHtml}
-        </div>
-        <label for="manual-front-input"
-               style="display:${isCloze ? "none" : "block"}; font-size:12px; margin-bottom:4px;">
-          Question for the front:
-        </label>
-        <textarea id="manual-front-input"
-                  style="display:${isCloze ? "none" : "block"};width:100%;height:80px;padding:8px;font-size:14px;
-                border:1px solid #ccc;border-radius:4px;resize:vertical;"
-            placeholder="Type your question here…">${msg.frontHtml || ""}</textarea>
-
-        ${isCloze ?
-          `<label for="manual-back-input" class="muted-text" style="display:block;font-size:12px;margin-bottom:4px;">Cloze text (add {{c1::deletions}}):</label>
-           <textarea id="manual-back-input" style="width:100%;height:120px;padding:8px;font-size:14px;border:1px solid #ccc;border-radius:4px;resize:vertical;">${msg.backHtml}</textarea>`
-        :
-          `<!-- Preview of the selected text -->
-           <div id="manual-back-preview">
-             <label class="preview-label" style="color:#ff6600"><b>Back of the card:</b></label>
-             <hr>
-             <div class="preview-content">${msg.backHtml}</div>
-           </div>`}
-
-        <div>
-            ${modelNotice}
-        </div>
-
-        <div id="manual-button-row">
-        <button id="manual-save-btn" class="manual-button">
-            <b>Save to Anki</b>
-        </button>
-        </div>
+            ${contentHtml}
+            <div style="display:flex; gap:12px; justify-content:flex-end; margin-top:24px;">
+                <button id="manual-cancel-btn" style="padding:10px 20px; border:1px solid #d1d5db; background:#fff; color:#374151; border-radius:8px; cursor:pointer; font-size:14px; font-weight:500;">
+                    Cancel
+                </button>
+                <button id="manual-save-btn" style="padding:10px 20px; border:none; background:#ff6600; color:#fff; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600;">
+                    Save to Anki
+                </button>
+            </div>
         `;
-
-        // Close button
-        const closeBtn = document.createElement("button");
-        closeBtn.textContent = "×";
-        Object.assign(closeBtn.style, {
-            position: "absolute",
-            top: "8px",
-            right: "8px",
-            background: "transparent",
-            border: "none",
-            fontSize: "18px",
-            cursor: "pointer",
-            color: "#666"
-        });
-        closeBtn.onclick = () => overlay.remove();
-        box.appendChild(closeBtn);
 
         overlay.appendChild(box);
         document.body.appendChild(overlay);
 
-        // 8) Enable Save validation
+        // 8) Set up real-time preview updates for cloze cards
+        if (isCloze) {
+            const textArea = box.querySelector("#manual-back-input");
+            const preview = box.querySelector("#manual-back-preview");
+            
+            if (textArea && preview) {
+                textArea.addEventListener("input", () => {
+                    // Update preview with current textarea content
+                    preview.innerHTML = textArea.value || "<em style='color:#9ca3af;'>Preview will appear here as you type...</em>";
+                });
+            }
+        }
+
+        // 9) Save validation and handler
         const frontInput = box.querySelector("#manual-front-input");
+        const backInput = box.querySelector("#manual-back-input");
         const saveBtn = box.querySelector("#manual-save-btn");
+        const cancelBtn = box.querySelector("#manual-cancel-btn");
+        
         function toggleSave() {
-          const hasFront = isCloze ? true : frontInput.value.trim().length > 0;
-          saveBtn.disabled = !hasFront;
-          saveBtn.style.opacity = hasFront ? "1" : "0.6";
+            const hasContent = isCloze ? 
+                (backInput && backInput.value.trim().length > 0) :
+                (frontInput && frontInput.value.trim().length > 0);
+            if (saveBtn) {
+                saveBtn.disabled = !hasContent;
+                saveBtn.style.opacity = hasContent ? "1" : "0.6";
+            }
         }
-        if (frontInput) {
-            frontInput.addEventListener("input", toggleSave);
-        }
+        
+        if (frontInput) frontInput.addEventListener("input", toggleSave);
+        if (backInput) backInput.addEventListener("input", toggleSave);
         toggleSave(); // Initial check
 
-        // 9) Save handler
-        saveBtn.onclick = () => {
-            const question = frontInput ? frontInput.value.trim() : "";
-            if (!isCloze && !question) return;
+        // 10) Event handlers
+        if (cancelBtn) {
+            cancelBtn.onclick = () => overlay.remove();
+        }
 
-            const selectedDeck = box.querySelector("#manual-deck").value;
-            const backInput = isCloze ? box.querySelector("#manual-back-input").value : msg.backHtml;
-            
-            chrome.runtime.sendMessage({
-                action   : "manualSave",
-                front    : question,
-                backHtml : backInput,
-                deckName : selectedDeck,
-                modelName: msg.modelName
-            });
-            overlay.remove();
-        };
+        if (saveBtn) {
+            saveBtn.onclick = () => {
+                const question = frontInput ? frontInput.value.trim() : "";
+                const clozeContent = backInput ? backInput.value.trim() : "";
+                
+                if (isCloze && !clozeContent) return;
+                if (!isCloze && !question) return;
+
+                const selectedDeck = box.querySelector("#manual-deck").value;
+                const finalBackContent = isCloze ? clozeContent : msg.backHtml;
+                
+                chrome.runtime.sendMessage({
+                    action   : "manualSave",
+                    front    : isCloze ? clozeContent : question, // For cloze, front and back are the same
+                    backHtml : finalBackContent,
+                    deckName : selectedDeck,
+                    modelName: msg.modelName,
+                    pageTitle: msg.pageTitle,
+                    pageUrl  : msg.pageUrl,
+                    imageHtml: msg.imageHtml
+                });
+                overlay.remove();
+            };
+        }
 
         return;
     }

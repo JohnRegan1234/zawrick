@@ -13,7 +13,10 @@ const BADGE_COLOR_DEFAULT = "#000"; // Default badge background color
 
 // System default prompts
 const SYSTEM_DEFAULT_BASIC_PROMPT_TEXT = `You are an expert Anki flash-card creator. Given an HTML snippet ({{text}}) that will appear on the back of a card from a page titled "{{title}}" ({{url}}), write ONE clear question for the front that tests the snippet's single most important idea. Output ONLY the question.`;
-const SYSTEM_DEFAULT_CLOZE_GUIDANCE_TEXT = `You are an expert Anki cloze deletion creator. Your goal is to process the provided text selection and convert it into a single string formatted for Anki cloze cards. Please adhere to the following rules:
+
+const SYSTEM_DEFAULT_CLOZE_GUIDANCE_TEXT = `You are an expert Anki cloze deletion creator. Your goal is to process the provided text selection and convert it into a single string formatted for Anki cloze cards. The input text may contain simple inline HTML formatting (like <b>, <i>, <u>, <span>, <a>) which you should attempt to preserve around the text content.
+
+Please adhere to the following rules:
 
 1.  **Identify Key Information:** For each new concept or distinct piece of information in the text, use a new cloze index (e.g., \`{{c1::concept one}}\`, then \`{{c2::another concept}}\`, \`{{c3::a third detail}}\`, etc.). Always start with \`{{c1::...}}\` for the first piece of clozed information.
 
@@ -28,9 +31,12 @@ const SYSTEM_DEFAULT_CLOZE_GUIDANCE_TEXT = `You are an expert Anki cloze deletio
 
 5.  **Output Formatting:**
     * The output must be ONLY the processed text containing the cloze deletions.
-    * Do NOT use any bold text.
-    * Do NOT add any markdown like horizontal rules/lines.
+    * PRESERVE simple inline HTML tags like <b>, <i>, <u>, <span>, <a> around text content where they exist.
+    * When clozing text that has HTML formatting, include the HTML tags INSIDE the cloze deletion: \`{{c1::<b>formatted text</b>}}\`.
+    * Do NOT cloze the HTML tags themselves, only the text content they contain.
+    * Do NOT add any markdown like horizontal rules/lines or bold formatting with asterisks.
     * Do NOT number the output as if it were a list of cards (e.g., avoid "1:", "2:"). The output should be a single continuous string.
+    * Avoid block-level HTML elements like <div>, <p>, <h1>, etc. in your output.
 
 6.  **Consistency:** Try to maintain consistent formatting if similar concepts or structures appear multiple times within the provided text selection.
 
@@ -38,11 +44,11 @@ const SYSTEM_DEFAULT_CLOZE_GUIDANCE_TEXT = `You are an expert Anki cloze deletio
 
 **Examples of Properly Formatted Output:**
 
-* Input sentence: "Foods high in iron include red meat, liver/kidney, and oily fish."
-    Desired output: "Foods high in iron include \`{{c1::red meat, liver/kidney, oily fish::x3}}\`."
+* Input: "Foods high in iron include <b>red meat</b>, <i>liver/kidney</i>, and <u>oily fish</u>."
+    Desired output: "Foods high in iron include \`{{c1::<b>red meat</b>, <i>liver/kidney</i>, <u>oily fish</u>::x3}}\`."
 
-* Input sentence: "At birth, a term newborn has iron stores of approximately 250 mg, with 75% in the blood and 25% in ferritin/haemosiderin/tissues."
-    Desired output: "At birth, a term newborn has iron stores of approximately \`{{c1::250 mg}}\`, with \`{{c2::75%}}\` in the blood and \`{{c3::25%}}\` in ferritin/haemosiderin/tissues."`;
+* Input: "At birth, a term newborn has iron stores of approximately <b>250 mg</b>, with <i>75%</i> in the blood and <i>25%</i> in ferritin/haemosiderin/tissues."
+    Desired output: "At birth, a term newborn has iron stores of approximately \`{{c1::<b>250 mg</b>}}\`, with \`{{c2::<i>75%</i>}}\` in the blood and \`{{c3::<i>25%</i>}}\` in ferritin/haemosiderin/tissues."`;
 
 // ── State ───────────────────────────────────────────────────────────────────
 let syncScheduled      = false;
@@ -51,181 +57,187 @@ let cachedPendingClips = [];
 // ── Helpers ────────────────────────────────────────────────────────────────
 function notify(tabId, status, message) {
   if (typeof tabId !== 'number' || tabId < 0) {
-    console.error('[Background][notify] Invalid tabId received:', tabId, 'Cannot send message:', {status, message});
+    console.error('[Background][notify] Invalid tabId received:', tabId);
     return;
   }
 
-  console.log('[Background][notify] Attempting to send notification to tab:', tabId, 'Message:', {status, message});
+  console.log('[Background][notify] Sending notification to tab:', tabId, {status, message});
 
-  chrome.tabs.sendMessage(tabId, { status, message }, (response) => {
+  chrome.tabs.sendMessage(tabId, { status, message }, async (response) => {
     if (chrome.runtime.lastError) {
       const errorMessage = chrome.runtime.lastError.message;
+      
       if (errorMessage.includes('The message port closed before a response was received')) {
-        // For status notifications, this is expected and not a critical failure.
-        console.warn('[Background][notify] Info: Message port closed for status notification to tab:', tabId, '. This is usually expected as the content script displays the toast and does not send a reply. Error details:', errorMessage);
-        // Do NOT attempt script injection/retry for this case.
-      } else if (errorMessage.includes('Receiving end does not exist')) {
-        // Content script is truly missing.
-        console.error('[Background][notify] Critical Error: Content script (receiving end) does not exist on tab:', tabId, '. Cannot display notification. Error:', errorMessage);
-        // Try to inject the content script if the tab allows it
-        chrome.tabs.get(tabId, (tab) => {
-          if (chrome.runtime.lastError) {
-            console.error('[Background][notify] Cannot access tab info for:', tabId, chrome.runtime.lastError.message);
-            return;
-          }
-          
-          // Additional validation for tab state
-          if (!tab || !tab.url) {
-            console.warn('[Background][notify] Tab is invalid or has no URL:', tab);
-            return;
-          }
-
-          // Check if tab is still active and not discarded
-          if (tab.discarded) {
-            console.warn('[Background][notify] Tab is discarded, cannot inject content script');
-            return;
-          }
-          
-          // Check if it's a regular webpage where we can inject scripts
-          const isRestrictedUrl = tab.url.startsWith('chrome://') || 
-                                 tab.url.startsWith('about:') || 
-                                 tab.url.startsWith('moz-extension://') || 
-                                 tab.url.startsWith('chrome-extension://') ||
-                                 tab.url.startsWith('edge://') ||
-                                 tab.url.startsWith('opera://') ||
-                                 tab.url === 'about:blank';
-                                 
-          if (isRestrictedUrl) {
-            console.warn('[Background][notify] Cannot inject content script on restricted page:', tab.url);
-            return;
-          }
-
-          console.log('[Background][notify] Attempting to inject content script into accessible tab:', tabId);
-          
-          chrome.scripting.executeScript({
-            target: { tabId: tabId },
-            files: ['contentScript.js']
-          }, (injectionResult) => {
-            if (chrome.runtime.lastError) {
-              console.error('[Background][notify] Failed to inject content script:', chrome.runtime.lastError.message);
-              // Don't retry further to avoid infinite loops
-              return;
-            }
-            
-            if (!injectionResult || injectionResult.length === 0) {
-              console.warn('[Background][notify] Content script injection returned no results');
-              return;
-            }
-            
-            console.log('[Background][notify] Content script injected successfully, retrying notification after delay');
-            
-            // Retry the notification after a longer delay to ensure script is ready
-            setTimeout(() => {
-              chrome.tabs.sendMessage(tabId, { status, message }, (retryResponse) => {
-                if (chrome.runtime.lastError) {
-                  console.error('[Background][notify] Retry notification failed (giving up):', chrome.runtime.lastError.message);
-                } else {
-                  console.log('[Background][notify] Retry notification succeeded');
-                }
-              });
-            }, 250); // Increased delay for script initialization
-          });
-        });
-      } else {
-        console.error('[Background][notify] Unhandled notification error:', errorMessage);
+        console.warn('[Background][notify] Message port closed - this is expected for notifications');
+        return;
       }
-    } else {
-      console.log('[Background][notify] Notification sent successfully to tab:', tabId);
+      
+      if (errorMessage.includes('Receiving end does not exist')) {
+        console.log('[Background][notify] Content script missing, attempting injection');
+        try {
+          await injectContentScriptAndWait(tabId);
+          // Retry notification
+          chrome.tabs.sendMessage(tabId, { status, message });
+        } catch (err) {
+          console.error('[Background][notify] Failed to inject content script:', err.message);
+        }
+        return;
+      }
+      
+      console.error('[Background][notify] Unhandled error:', errorMessage);
     }
   });
 }
 
 function getSelectionHtml(tabId) {
   if (typeof tabId !== 'number' || tabId < 0) {
-    console.error('[Background][getSelectionHtml] Invalid tabId received:', tabId);
+    console.error('[Background][getSelectionHtml] Invalid tabId:', tabId);
     return Promise.resolve({ html: "", error: "Invalid tabId" });
   }
 
-  console.log('[Background][getSelectionHtml] Attempting to getSelectionHtml from tab:', tabId);
-
-  // Helper to send the message, optionally as a retry
-  function sendMessageToContentScript(retry = false) {
-    return new Promise(res => {
-      chrome.tabs.sendMessage(tabId, { action: "getSelectionHtml" }, (r) => {
-        if (chrome.runtime.lastError) {
-          const errorMessage = chrome.runtime.lastError.message;
-          console.error('[Background][getSelectionHtml] Error getting selection from tab:', tabId, 'Error:', errorMessage);
-          // Only attempt injection/retry once, and only if not already retried
-          if (!retry && errorMessage.includes('Receiving end does not exist')) {
-            console.warn('[Background][getSelectionHtml] Content script not present. Attempting injection and one retry.');
-            chrome.tabs.get(tabId, (tab) => {
+  return new Promise(async (resolve) => {
+    // Try direct message first
+    chrome.tabs.sendMessage(tabId, { action: "getSelectionHtml" }, async (response) => {
+      if (chrome.runtime.lastError) {
+        const errorMessage = chrome.runtime.lastError.message;
+        
+        if (errorMessage.includes('Receiving end does not exist')) {
+          try {
+            await injectContentScriptAndWait(tabId);
+            // Retry after injection
+            chrome.tabs.sendMessage(tabId, { action: "getSelectionHtml" }, (retryResponse) => {
               if (chrome.runtime.lastError) {
-                console.error('[Background][getSelectionHtml] Cannot access tab info for:', tabId, chrome.runtime.lastError.message);
-                res({ html: "", error: chrome.runtime.lastError.message });
-                return;
+                resolve({ html: "", error: chrome.runtime.lastError.message });
+              } else {
+                resolve(retryResponse || { html: "", error: "No response data" });
               }
-              
-              // Additional validation for tab state
-              if (!tab || !tab.url) {
-                console.warn('[Background][getSelectionHtml] Tab is invalid or has no URL:', tab);
-                res({ html: "", error: "Tab invalid or missing URL" });
-                return;
-              }
-              if (tab.discarded) {
-                console.warn('[Background][getSelectionHtml] Tab is discarded, cannot inject content script');
-                res({ html: "", error: "Tab discarded" });
-                return;
-              }
-              const isRestrictedUrl = tab.url.startsWith('chrome://') ||
-                                     tab.url.startsWith('about:') ||
-                                     tab.url.startsWith('moz-extension://') ||
-                                     tab.url.startsWith('chrome-extension://') ||
-                                     tab.url.startsWith('edge://') ||
-                                     tab.url.startsWith('opera://') ||
-                                     tab.url === 'about:blank';
-              if (isRestrictedUrl) {
-                console.warn('[Background][getSelectionHtml] Cannot inject content script on restricted page:', tab.url);
-                res({ html: "", error: "Restricted page, cannot inject content script" });
-                return;
-              }
-              if (!chrome.scripting || !chrome.scripting.executeScript) {
-                console.error('[Background][getSelectionHtml] chrome.scripting API not available. Cannot inject content script.');
-                res({ html: "", error: "chrome.scripting API not available" });
-                return;
-              }
-              chrome.scripting.executeScript({
-                target: { tabId: tabId },
-                files: ['contentScript.js']
-              }, (injectionResult) => {
-                if (chrome.runtime.lastError) {
-                  console.error('[Background][getSelectionHtml] Failed to inject content script:', chrome.runtime.lastError.message);
-                  res({ html: "", error: chrome.runtime.lastError.message });
-                  return;
-                }
-                if (!injectionResult || injectionResult.length === 0) {
-                  console.warn('[Background][getSelectionHtml] Content script injection returned no results');
-                  res({ html: "", error: "Content script injection returned no results" });
-                  return;
-                }
-                console.log('[Background][getSelectionHtml] Content script injected, retrying getSelectionHtml after delay');
-                setTimeout(() => {
-                  // Retry once
-                  sendMessageToContentScript(true).then(res);
-                }, 250);
-              });
             });
-          } else {
-            res({ html: "", error: errorMessage });
+          } catch (err) {
+            resolve({ html: "", error: err.message });
           }
         } else {
-          console.log('[Background][getSelectionHtml] Received response from tab:', tabId, 'Response:', r);
-          res(r || { html: "", error: "No response data" });
+          resolve({ html: "", error: errorMessage });
         }
-      });
+      } else {
+        resolve(response || { html: "", error: "No response data" });
+      }
     });
+  });
+}
+
+// ── Template Selection Logic ──────────────────────────────────────────────
+function getPromptTemplate(settings) {
+  console.log('[Background][getPromptTemplate] Selecting template for:', settings.selectedPrompt);
+  
+  // System prompts
+  if (settings.selectedPrompt === 'system-default-basic') {
+    return {
+      template: SYSTEM_DEFAULT_BASIC_PROMPT_TEXT,
+      id: 'system-default-basic',
+      label: 'System Default - Basic Cards'
+    };
+  }
+  
+  if (settings.selectedPrompt === 'system-default-cloze') {
+    // For cloze system prompt, use basic template for front generation
+    return {
+      template: SYSTEM_DEFAULT_BASIC_PROMPT_TEXT,
+      id: 'system-default-basic',
+      label: 'System Default - Basic Cards'
+    };
+  }
+  
+  // User prompts
+  const userPrompts = Array.isArray(settings.prompts) ? settings.prompts : [];
+  const userSelectedProfile = userPrompts.find(p => p.id === settings.selectedPrompt);
+  
+  if (userSelectedProfile && userSelectedProfile.template) {
+    return {
+      template: userSelectedProfile.template,
+      id: userSelectedProfile.id,
+      label: userSelectedProfile.label
+    };
+  }
+  
+  // Fallback to first user prompt if it exists and has a template
+  if (userPrompts.length > 0 && userPrompts[0].template) {
+    console.warn('[Background][getPromptTemplate] Selected prompt not found, using first user prompt');
+    return {
+      template: userPrompts[0].template,
+      id: userPrompts[0].id,
+      label: userPrompts[0].label
+    };
+  }
+  
+  // Ultimate fallback
+  console.warn('[Background][getPromptTemplate] No valid prompts found, using system default');
+  return {
+    template: SYSTEM_DEFAULT_BASIC_PROMPT_TEXT,
+    id: 'system-default-basic',
+    label: 'System Default - Basic Cards'
+  };
+}
+
+// ── Improved Script Injection ─────────────────────────────────────────────
+async function injectContentScriptAndWait(tabId, maxRetries = 3) {
+  const tab = await new Promise((resolve) => {
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError) {
+        resolve(null);
+      } else {
+        resolve(tab);
+      }
+    });
+  });
+
+  if (!tab || !tab.url || tab.discarded) {
+    throw new Error('Tab invalid, missing URL, or discarded');
   }
 
-  return sendMessageToContentScript(false);
+  const isRestrictedUrl = tab.url.startsWith('chrome://') ||
+                         tab.url.startsWith('about:') ||
+                         tab.url.startsWith('moz-extension://') ||
+                         tab.url.startsWith('chrome-extension://') ||
+                         tab.url.startsWith('edge://') ||
+                         tab.url.startsWith('opera://') ||
+                         tab.url === 'about:blank';
+
+  if (isRestrictedUrl) {
+    throw new Error('Cannot inject content script on restricted page');
+  }
+
+  // Inject the script
+  await new Promise((resolve, reject) => {
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      files: ['contentScript.js']
+    }, (injectionResult) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else if (!injectionResult || injectionResult.length === 0) {
+        reject(new Error('Content script injection returned no results'));
+      } else {
+        resolve();
+      }
+    });
+  });
+
+  // Wait for script to be ready by checking if it responds
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 100 * attempt)); // Progressive delay
+    
+    const isReady = await new Promise((resolve) => {
+      chrome.tabs.sendMessage(tabId, { action: "ping" }, (response) => {
+        resolve(!chrome.runtime.lastError && response?.ready);
+      });
+    });
+
+    if (isReady) {
+      return;
+    }
+  }
+
+  throw new Error(`Content script not ready after ${maxRetries} attempts`);
 }
 
 // ── Badge ──────────────────────────────────────────────────────────────────
@@ -263,7 +275,24 @@ async function flushQueue() {
   const remaining = [];
   for (const clip of pendingClips) {
     try {
-      await addToAnki(clip.front, clip.backHtml, clip.deckName, clip.modelName);
+      // Construct extraContentForCloze from queued clip data
+      let extraContentForCloze = "";
+      if (/cloze/i.test(clip.modelName)) {
+        // Combine image and source from the queued clip
+        if (clip.imageHtml) {
+          extraContentForCloze += clip.imageHtml;
+          if (clip.pageUrl) {
+            extraContentForCloze += "<br><hr><br>"; // Add separator between image and source
+          }
+        }
+        if (clip.pageUrl) {
+          // Generate source link HTML for cloze Extra field
+          const sourceHtml = generateBackWithSource("", clip.pageTitle || "", clip.pageUrl);
+          extraContentForCloze += sourceHtml;
+        }
+      }
+      
+      await addToAnki(clip.front, clip.backHtml, clip.deckName, clip.modelName, extraContentForCloze);
     } catch (err) {
       console.error("addToAnki failed for clip:", clip, "Error:", err);
       remaining.push(clip);
@@ -299,53 +328,67 @@ function initContextMenu(platform) {
 
 // ── Main action ────────────────────────────────────────────────────────────
 async function handleAction(tab, info) {
-  console.log('[Background][handleAction] Triggered.');
-  console.log('[Background][handleAction] tab.url:', tab?.url, 'tab.id:', tab?.id);
-  // Defensive: log tab object
-  console.log('[Background][handleAction] tab object:', tab);
-  // ...existing code...
+  console.log('[Background][handleAction] Triggered for tab:', tab?.id);
+  
   const settings = await getSettings();
-  // Diagnostic: log settings
-  console.log('[Background][handleAction] Settings loaded:', JSON.stringify(settings, null, 2));
+  
+  // Get selection content
+  const selectionResult = await getSelectionHtml(tab.id);
+  if (selectionResult.error || !selectionResult.html) {
+    notify(tab.id, "error", "Could not get selected text. Please try again.");
+    return;
+  }
+  
+  const selectionContent = selectionResult.html;
+  const pageTitle = tab?.title || "Unknown Page";
+  const pageUrl = tab?.url || "";
+  const isCloze = /cloze/i.test(settings.modelName);
 
-  // ...existing code...
+  // Extract image for cloze notes
+  let imageHtmlForExtra = "";
+  if (isCloze && selectionContent && /<img[^>]+>/i.test(selectionContent)) {
+    const imgMatch = selectionContent.match(/<img[^>]+>/i);
+    if (imgMatch) {
+      imageHtmlForExtra = imgMatch[0];
+    }
+  }
 
-  // always keep a clean text copy so cloze markers don't end up inside <a> tags
+  // Extract text content
   let rawText;
   try {
     rawText = stripHtml(selectionContent);
   } catch (e) {
-    console.warn('[Background][handleAction] stripHtml failed, using fallback:', e);
+    console.warn('[Background][handleAction] stripHtml failed:', e);
     rawText = selectionContent;
   }
 
-  // Validate we have content to work with
   if (!rawText.trim()) {
-    console.warn(`[handleAction] No text content found. Raw HTML: "${selectionContent.substring(0, 100)}..."`);
     notify(tab.id, "error", "No text selected. Please select some text first.");
     return;
   }
 
-  console.log(`[handleAction] Processing ${rawText.length} characters of text`);
+  // Get prompt template using centralized logic
+  const promptInfo = getPromptTemplate(settings);
 
-  // ── 1.  Build back-side (insert clozes if model = Cloze) ────────────────
+  // Build back HTML
   let backHtml;
-  let clozeText = null; // <-- Track cloze text for history
+  let clozeText = null;
+  
   if (isCloze && settings.gptEnabled) {
     try {
       const effectiveClozeGuidance = settings.clozeGuide || SYSTEM_DEFAULT_CLOZE_GUIDANCE_TEXT;
       const clozed = await generateClozeWithRetry(
-        rawText,
+        selectionContent, // Pass original HTML content instead of rawText
         effectiveClozeGuidance,
         pageTitle,
         pageUrl,
         settings.openaiKey,
         settings.gptModel
       );
-      clozeText = clozed; // <-- Save for history
+      clozeText = clozed;
       backHtml = generateBackWithSource(clozed, pageTitle, pageUrl, { noSource: true });
     } catch (err) {
-      console.warn("Cloze GPT failed, falling back to raw text:", err);
+      console.warn("Cloze GPT failed:", err);
       backHtml = generateBackWithSource(`<p>${rawText}</p>`, pageTitle, pageUrl, { noSource: true });
     }
   } else {
@@ -353,9 +396,9 @@ async function handleAction(tab, info) {
   }
 
   const ankiOnline = await checkAnkiAvailability();
-  const deckList   = await fetchDeckNames();
+  const deckList = await fetchDeckNames();
 
-  // ── For cloze cards without GPT, always show manual input ──────────────
+  // For cloze cards without GPT, show manual input
   if (isCloze && !settings.gptEnabled) {
     sendFrontInputRequest(
       tab.id,
@@ -366,81 +409,44 @@ async function handleAction(tab, info) {
       deckList,
       ankiOnline,
       settings.modelName,
-      rawText
+      rawText,
+      pageTitle,
+      pageUrl,
+      imageHtmlForExtra,
+      selectionContent
     );
     return;
   }
 
-  // ── Determine template for basic card generation ──────────────────────
-  let frontGenerationTemplate;
-  let historyPromptId, historyPromptLabel;
-  
-  // Check if selectedPrompt is a system prompt
-  if (settings.selectedPrompt === 'system-default-basic') {
-    frontGenerationTemplate = SYSTEM_DEFAULT_BASIC_PROMPT_TEXT;
-    historyPromptId = 'system-default-basic';
-    historyPromptLabel = 'System Default - Basic Cards';
-  } else if (settings.selectedPrompt === 'system-default-cloze') {
-    frontGenerationTemplate = SYSTEM_DEFAULT_BASIC_PROMPT_TEXT; // Use basic for front generation
-    historyPromptId = 'system-default-basic';
-    historyPromptLabel = 'System Default - Basic Cards';
-  } else {
-    // Handle user prompts
-    const userSelectedProfile = (settings.prompts || []).find(p => p.id === settings.selectedPrompt);
-    
-    if (userSelectedProfile) {
-      frontGenerationTemplate = userSelectedProfile.template;
-      historyPromptId = userSelectedProfile.id;
-      historyPromptLabel = userSelectedProfile.label;
-    } else if (settings.prompts && settings.prompts.length > 0) {
-      // Fallback to first user prompt if selectedPrompt is invalid but prompts exist
-      frontGenerationTemplate = settings.prompts[0].template;
-      historyPromptId = settings.prompts[0].id;
-      historyPromptLabel = settings.prompts[0].label;
-    } else {
-      // Ultimate fallback to system default
-      frontGenerationTemplate = SYSTEM_DEFAULT_BASIC_PROMPT_TEXT;
-      historyPromptId = 'system-default-basic';
-      historyPromptLabel = 'System Default - Basic Cards';
-    }
-  }
-
+  // Generate front text
   let front = "";
   let gptFailed = false;
 
-  // ── GPT Front Generation ──────────────────────────────────────────────
   if (settings.gptEnabled && isValidOpenAiKey(settings.openaiKey)) {
     try {
-      console.log('[Background][handleAction] Calling generateFrontWithRetry...');
       front = await generateFrontWithRetry(selectionContent, {
         pageTitle,
         pageUrl,
         openaiKey: settings.openaiKey,
         gptModel: settings.gptModel,
-        _resolvedTemplateString: frontGenerationTemplate
+        _resolvedTemplateString: promptInfo.template
       });
-      console.log('[Background][handleAction] GPT generated front:', front);
 
-      // Store prompt history entry only on success
-      console.log('[Background][handleAction] Pre-history check. Settings.gptEnabled:', settings.gptEnabled, 'isValidOpenAiKey:', isValidOpenAiKey(settings.openaiKey), 'Generated front (first 50 chars):', front?.substring(0,50), 'IsCloze:', isCloze, 'ClozeText (first 50 chars):', clozeText?.substring(0,50));
-      console.log('[Background][handleAction] Condition (front && front.trim()) evaluates to:', (front && front.trim()));
+      // Store history on success
       if (front && front.trim()) {
-        // Diagnostic: log data being prepared for storePromptHistory
-        const historyObj = {
+        await storePromptHistory({
           timestamp: Date.now(),
-          promptId: historyPromptId,
-          promptLabel: historyPromptLabel,
-          promptTemplate: frontGenerationTemplate,
+          promptId: promptInfo.id,
+          promptLabel: promptInfo.label,
+          promptTemplate: promptInfo.template,
           generatedFront: front,
           sourceText: rawText.substring(0, 200) + (rawText.length > 200 ? '...' : ''),
-          pageTitle: pageTitle,
-          pageUrl: pageUrl,
+          pageTitle,
+          pageUrl,
           modelName: settings.modelName,
           deckName: settings.deckName,
           generatedClozeText: isCloze ? clozeText : undefined
-        };
-        console.log('[Background][handleAction] CONDITIONS MET. Calling storePromptHistory for basic card. Data being prepared:', JSON.stringify(historyObj, null, 2));
-        await storePromptHistory(historyObj);
+        });
       }
     } catch (err) {
       console.error('[Background][handleAction] Front generation failed:', err);
@@ -449,96 +455,32 @@ async function handleAction(tab, info) {
     }
   }
 
-  // ── Handle confirmation or manual input cases ─────────────────────────
+  // Determine if manual input is needed
   const needsManualInput = !settings.gptEnabled || gptFailed || settings.alwaysConfirm || !front.trim();
-  console.log('[Background][handleAction] needsManualInput:', needsManualInput, 
-    '| gptEnabled:', settings.gptEnabled, 
-    '| gptFailed:', gptFailed, 
-    '| alwaysConfirm:', settings.alwaysConfirm, 
-    '| front:', front);
 
-  // --- PDF detection: Only treat as PDF if context menu selectionText is present and tab.url is a PDF ---
-  // This ensures only PDF context menu triggers are treated as PDF, not normal web pages.
-  const isPdf = (() => {
-    // If info.selectionText exists and tab.url looks like a PDF viewer or ends with .pdf, treat as PDF
-    if (info && typeof info.selectionText === 'string' && info.selectionText.trim()) {
-      if (
-        (tab?.url && (
-          tab.url.startsWith('chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/') || // Chrome PDF Viewer
-          tab.url.endsWith('.pdf') ||
-          (tab.url.startsWith('blob:') && tab.url.includes('.pdf')) ||
-          tab.url.startsWith('edge://pdf/') ||
-          tab.url.startsWith('resource://pdf.js/')
-        ))
-      ) {
-        return true;
-      }
-    }
-    return false;
-  })();
-
-  // --- FIX: Only show manual dialog for non-PDF context menu triggers ---
-  if (needsManualInput && !isPdf) {
+  if (needsManualInput) {
     sendFrontInputRequest(
       tab.id,
       backHtml,
-      gptFailed 
-        ? "GPT failed – please supply front text manually."
-        : settings.alwaysConfirm 
-          ? (isCloze ? "Review and edit the cloze text if needed." : "Review and edit the generated question.")
-          : "Please provide a question for the front of this card.",
+      gptFailed ? "GPT failed – please supply front text manually." :
+        settings.alwaysConfirm ? (isCloze ? "Review and edit the cloze text if needed." : "Review and edit the generated question.") :
+        "Please provide a question for the front of this card.",
       gptFailed ? "OpenAI API error occurred" : null,
       settings.deckName,
       deckList,
       ankiOnline,
       settings.modelName,
-      front // Pass the generated front (could be empty)
+      isCloze ? clozeText : front, // Use clozeText for cloze cards, front for basic cards
+      pageTitle,
+      pageUrl,
+      imageHtmlForExtra,
+      selectionContent
     );
     return;
   }
 
-  // --- If it's a PDF context menu, always go to PDF review queue, never show dialog ---
-  if (needsManualInput && isPdf) {
-    // --- PDF Review Queue Feature ---
-    // (This block is only reached for PDF context menu triggers)
-    const cardObj = {
-      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : (Math.random().toString(36).slice(2) + Date.now()),
-      timestamp: Date.now(),
-      sourceText: rawText,
-      generatedFront: front || "",
-      generatedClozeText: isCloze ? backHtml : "",
-      originalPageTitle: pageTitle,
-      originalPageUrl: pageUrl,
-      originalDeckName: settings.deckName,
-      originalModelName: settings.modelName,
-      isCloze: !!isCloze
-    };
-
-    try {
-      const storage = await chrome.storage.local.get({ pendingReviewPdfCards: [] });
-      const reviewArr = Array.isArray(storage.pendingReviewPdfCards) ? storage.pendingReviewPdfCards : [];
-      reviewArr.unshift(cardObj);
-      await chrome.storage.local.set({ pendingReviewPdfCards: reviewArr });
-      chrome.notifications.create('pdf_card_for_review_' + Date.now(), {
-        type: 'basic',
-        iconUrl: 'icons/icon128.png',
-        title: 'Zawrick: Card Ready for Review',
-        message: 'A card created from a PDF has been added to your review queue in the extension options.'
-      });
-    } catch (err) {
-      chrome.notifications.create('pdf_review_queue_error_' + Date.now(), {
-        type: 'basic',
-        iconUrl: 'icons/icon128.png',
-        title: 'Zawrick: PDF Review Queue Error',
-        message: 'Failed to save PDF card for review: ' + err.message
-      });
-    }
-    return;
-  }
-
-  console.log(`[handleAction] Auto-saving card with front: "${front.substring(0, 50)}..."`);
-  // ── Auto-save (GPT worked and confirmation disabled) ──────────────────
-  await saveToAnkiOrQueue(isCloze ? backHtml : front, backHtml, settings, tab.id);
+  // Auto-save
+  await saveToAnkiOrQueue(isCloze ? backHtml : front, backHtml, settings, tab.id, pageTitle, pageUrl, imageHtmlForExtra);
 }
 
 // ── Anki helpers ───────────────────────────────────────────────────────────
@@ -580,6 +522,18 @@ function stripHtml(html) {
   return tmp.textContent || tmp.innerText || '';
 }
 
+// A new helper function to check for PDF URLs
+function isPdfUrl(url) {
+    if (!url) return false;
+    return (
+        url.startsWith('chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/') || // Chrome's native PDF viewer
+        url.endsWith('.pdf') ||
+        url.startsWith('edge://pdf/') || // Edge's PDF viewer
+        (url.startsWith('blob:') && url.includes('.pdf')) ||
+        url.startsWith('resource://pdf.js/')
+    );
+}
+
 // ── Misc helpers ───────────────────────────────────────────────────────────
 function generateBackWithSource(html, title, url, opts = {}) {
   // If opts.noSource is true, omit the source line (for cloze cards)
@@ -594,9 +548,25 @@ function generateBackWithSource(html, title, url, opts = {}) {
     </div>`;
 }
 
-async function saveToAnkiOrQueue(front, backHtml, settings, tabId) {
+async function saveToAnkiOrQueue(front, backHtml, settings, tabId, pageTitle = "", pageUrl = "", imageHtml = "") {
   try {
-    await addToAnki(front, backHtml, settings.deckName, settings.modelName);
+    let extraContentForCloze = "";
+    if (/cloze/i.test(settings.modelName)) {
+      // Construct extraContentForCloze with both image and source
+      if (imageHtml) {
+        extraContentForCloze += imageHtml;
+        if (pageUrl) {
+          extraContentForCloze += "<br><hr><br>"; // Add separator between image and source
+        }
+      }
+      if (pageUrl) {
+        // Generate source link HTML for cloze Extra field
+        const sourceHtml = generateBackWithSource("", pageTitle, pageUrl);
+        extraContentForCloze += sourceHtml;
+      }
+    }
+    
+    await addToAnki(front, backHtml, settings.deckName, settings.modelName, extraContentForCloze);
     if (typeof tabId === 'number' && tabId >= 0) {
       notify(tabId, "success", "Card saved to Anki!");
     } else {
@@ -604,7 +574,7 @@ async function saveToAnkiOrQueue(front, backHtml, settings, tabId) {
     }
   } catch (err) {
     if (err instanceof TypeError) {
-      await queueClip({ front, backHtml, ...settings });
+      await queueClip({ front, backHtml, ...settings, pageTitle, pageUrl, imageHtml });
       if (typeof tabId === 'number' && tabId >= 0) {
         notify(tabId, "success", "Anki offline – card saved locally");
       } else {
@@ -642,17 +612,21 @@ function getSettings() {
 // stub – real UI lives in content script / popup
 function sendFrontInputRequest(tabId, backHtml, helper, err,
                                deckName, deckList, ankiOnline,
-                               modelName, frontHtml = "") {
+                               modelName, frontHtml = "", pageTitle = "", pageUrl = "", imageHtml = "", originalSelectionHtml = "") {
   const messagePayload = {
     action: "manualFront",
-    backHtml,
+    backHtml: backHtml, // Pass the fully-formatted card back for previewing
     helper,
     error: err,
     deckName,
     deckList,
     ankiOnline,
     modelName,
-    frontHtml
+    frontHtml,
+    pageTitle,
+    pageUrl,
+    imageHtml,
+    originalSelectionHtml
   };
   console.log('[Background][sendFrontInputRequest] Attempting to send request to tab:', tabId, 'Payload:', messagePayload);
 
@@ -662,17 +636,22 @@ function sendFrontInputRequest(tabId, backHtml, helper, err,
       if (errorMessage.includes('The message port closed before a response was received')) {
         console.warn('[Background][sendFrontInputRequest] Info: Message port closed for "manualFront" to tab:', tabId, '. This is often expected as the content script shows UI and sends a new message on user action. Error details:', errorMessage);
       } else if (errorMessage.includes('Receiving end does not exist')) {
-        // Log if this is a normal HTML page
-        chrome.tabs.get(tabId, (tab) => {
-          if (chrome.runtime.lastError) {
-            console.error('[Background][sendFrontInputRequest] Cannot access tab for retry:', chrome.runtime.lastError.message);
-            return;
-          }
-          console.error('[Background][sendFrontInputRequest] "Receiving end does not exist" for tab:', tabId, 'Tab URL:', tab.url);
-          // ...existing retry/injection logic...
-        });
+        console.warn('[Background][sendFrontInputRequest] Missing content script for "manualFront" request to tab:', tabId, '. Attempting injection.');
+        injectContentScriptAndWait(tabId)
+          .then(() => {
+            chrome.tabs.sendMessage(tabId, messagePayload, (retryResponse) => {
+              if (chrome.runtime.lastError) {
+                console.error('[Background][sendFrontInputRequest] Retry after injection also failed:', chrome.runtime.lastError.message);
+              } else {
+                console.log('[Background][sendFrontInputRequest] "manualFront" successfully sent after injection to tab:', tabId);
+              }
+            });
+          })
+          .catch((injectionError) => {
+            console.error('[Background][sendFrontInputRequest] Script injection failed for tab:', tabId, 'Error:', injectionError);
+          });
       } else {
-        console.error('[Background][sendFrontInputRequest] Unhandled messaging error for "manualFront" to tab:', tabId, 'Error:', errorMessage);
+        console.error('[Background][sendFrontInputRequest] Unhandled error for "manualFront" to tab:', tabId, 'Error:', errorMessage);
       }
     } else {
       console.log('[Background][sendFrontInputRequest] "manualFront" request dispatched to tab:', tabId, 'Optional response:', response);
@@ -682,7 +661,6 @@ function sendFrontInputRequest(tabId, backHtml, helper, err,
 
 // Store prompt history entry
 async function storePromptHistory(entry) {
-  // Diagnostic: log entry at start
   console.log('[Background][storePromptHistory] CALLED. Entry to be saved:', JSON.stringify(entry, null, 2));
   try {
     let { promptHistory = [] } = await chrome.storage.local.get({ promptHistory: [] });
@@ -700,8 +678,31 @@ async function storePromptHistory(entry) {
 
     await chrome.storage.local.set({ promptHistory });
   } catch (err) {
-    // Enhanced error logging
     console.error("[Background][storePromptHistory] FAILED to store prompt history. Error:", err, "Attempted entry data:", JSON.stringify(entry, null, 2));
+  }
+}
+
+// ── PDF Review Queue Management ───────────────────────────────────────────
+async function getPendingPdfCards() {
+  try {
+    const { pendingReviewPdfCards = [] } = await chrome.storage.local.get({ pendingReviewPdfCards: [] });
+    return Array.isArray(pendingReviewPdfCards) ? pendingReviewPdfCards : [];
+  } catch (err) {
+    console.error('[Background][getPendingPdfCards] Failed to get PDF cards:', err);
+    return [];
+  }
+}
+
+async function removePdfCard(cardId) {
+  try {
+    const storage = await chrome.storage.local.get({ pendingReviewPdfCards: [] });
+    const reviewArr = Array.isArray(storage.pendingReviewPdfCards) ? storage.pendingReviewPdfCards : [];
+    const filteredArr = reviewArr.filter(card => card.id !== cardId);
+    await chrome.storage.local.set({ pendingReviewPdfCards: filteredArr });
+    return true;
+  } catch (err) {
+    console.error('[Background][removePdfCard] Failed to remove PDF card:', err);
+    return false;
   }
 }
 
@@ -726,119 +727,71 @@ chrome.alarms.onAlarm.addListener(a => {
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   // Diagnostic logging for PDF/context menu debugging
-  console.log('[ContextMenu PDF Check] Context menu clicked. Raw Info Object:', JSON.stringify(info, null, 2));
-  console.log('[ContextMenu PDF Check] Raw Tab Object:', JSON.stringify(tab, null, 2));
-  console.log('[ContextMenu PDF Check] info.menuItemId:', info?.menuItemId);
-  console.log('[ContextMenu PDF Check] info.selectionText (THIS IS CRUCIAL):', info?.selectionText);
-  console.log('[ContextMenu PDF Check] info.pageUrl (from info object):', info?.pageUrl);
-  console.log('[ContextMenu PDF Check] info.frameUrl (if available):', info?.frameUrl);
-  console.log('[ContextMenu PDF Check] info.linkUrl (if available, for context):', info?.linkUrl);
-  console.log('[ContextMenu PDF Check] tab.id:', tab?.id);
-  console.log('[ContextMenu PDF Check] tab.url (from tab object):', tab?.url);
-  console.log('[ContextMenu PDF Check] tab.title (from tab object):', tab?.title);
-  console.log('[ContextMenu PDF Check] tab.favIconUrl (if available):', tab?.favIconUrl);
+  console.log('[ContextMenu] Context menu clicked. Raw Info Object:', JSON.stringify(info, null, 2));
+  console.log('[ContextMenu] Raw Tab Object:', JSON.stringify(tab, null, 2));
 
-  // PDF/context menu workaround: use info.selectionText directly if present
-  if (info.menuItemId === COMMAND_SAVE_TO_ANKI && info.selectionText && info.selectionText.trim() !== "") {
-    console.log('[ContextMenu PDF Path] Valid info.selectionText found, processing directly for command:', info.menuItemId);
-    await handlePdfSelection(info, tab);
+  if (info.menuItemId !== COMMAND_SAVE_TO_ANKI) {
     return;
   }
 
-  // Existing handler for other cases
-  if (info.menuItemId === COMMAND_SAVE_TO_ANKI) {
-    console.log('[ContextMenu Normal Path] No direct selectionText or different command, using handleAction for command:', info.menuItemId);
-    handleAction(tab, info);
+  // Correctly route based on the tab's URL
+  if (isPdfUrl(tab.url)) {
+    console.log('[ContextMenu Router] PDF URL detected. Routing to handlePdfSelection.');
+    // This is a PDF, so we must use info.selectionText and the PDF handler
+    if (info.selectionText && info.selectionText.trim() !== "") {
+      await handlePdfSelection(info, tab);
+    } else {
+      console.warn('[ContextMenu Router] PDF detected, but no selection text found in `info` object.');
+    }
+  } else {
+    console.log('[ContextMenu Router] Standard webpage detected. Routing to handleAction.');
+    // This is a normal webpage, use the standard handler
+    await handleAction(tab, info);
   }
 });
 
 // PDF/context menu workaround handler
 async function handlePdfSelection(info, tab) {
-  // 1. Entry logging
-  console.log('[handlePdfSelection] Entry. info.selectionText (first 100 chars):', info.selectionText?.substring(0, 100));
-  console.log('[handlePdfSelection] Tab object (raw):', JSON.stringify(tab, null, 2));
-  console.log('[handlePdfSelection] Info object (raw):', JSON.stringify(info, null, 2));
+  console.log('[handlePdfSelection] Processing PDF selection');
 
-  // 2. Get page info and log
   let pageTitle = tab?.title || "PDF Document";
   let pageUrl = info?.frameUrl || tab?.url || info?.pageUrl || "";
   if (pageUrl.startsWith('chrome-extension://')) {
     pageTitle = tab?.title || "Viewed PDF";
     pageUrl = "";
   }
-  console.log('[handlePdfSelection] Determined Page Info - Title:', pageTitle, 'URL:', pageUrl);
 
-  // 3. Load settings and log
   const settings = await getSettings();
-  // Diagnostic: log settings
-  console.log('[Background][handlePdfSelection] Settings loaded:', JSON.stringify(settings, null, 2));
+  const promptInfo = getPromptTemplate(settings); // Use centralized logic
 
-  // --- Add robust logging before template selection logic ---
-  console.log('[Background][handlePdfSelection] --- Determining frontGenerationTemplate ---');
-  console.log('[Background][handlePdfSelection] Initial settings.selectedPrompt:', settings.selectedPrompt);
-  console.log('[Background][handlePdfSelection] Initial settings.prompts:', JSON.stringify(settings.prompts, null, 2));
+  const isCloze = /cloze/i.test(settings.modelName);
+  const rawText = info.selectionText;
 
-  let frontGenerationTemplate, historyPromptId, historyPromptLabel;
-
-  if (settings.selectedPrompt === 'system-default-basic') {
-    frontGenerationTemplate = SYSTEM_DEFAULT_BASIC_PROMPT_TEXT;
-    historyPromptId = 'system-default-basic';
-    historyPromptLabel = 'System Default - Basic Cards';
-  } else if (settings.selectedPrompt === 'system-default-cloze') {
-    frontGenerationTemplate = SYSTEM_DEFAULT_BASIC_PROMPT_TEXT;
-    historyPromptId = 'system-default-basic';
-    historyPromptLabel = 'System Default - Basic Cards';
-  } else {
-    const userSelectedProfile = (settings.prompts || []).find(p => p.id === settings.selectedPrompt);
-    if (userSelectedProfile) {
-      frontGenerationTemplate = userSelectedProfile.template;
-      historyPromptId = userSelectedProfile.id;
-      historyPromptLabel = userSelectedProfile.label;
-    } else if (settings.prompts && settings.prompts.length > 0) {
-      frontGenerationTemplate = settings.prompts[0].template;
-      historyPromptId = settings.prompts[0].id;
-      historyPromptLabel = settings.prompts[0].label;
-    } else {
-      frontGenerationTemplate = SYSTEM_DEFAULT_BASIC_PROMPT_TEXT;
-      historyPromptId = 'system-default-basic';
-      historyPromptLabel = 'System Default - Basic Cards';
+  // Extract image for cloze notes (unlikely in PDFs but for completeness)
+  let imageHtmlForExtra = "";
+  if (isCloze && info.selectionText && /<img[^>]+>/i.test(info.selectionText)) {
+    const imgMatch = info.selectionText.match(/<img[^>]+>/i);
+    if (imgMatch) {
+      imageHtmlForExtra = imgMatch[0];
     }
   }
 
-  // Log the state of frontGenerationTemplate AFTER the selection logic but BEFORE the safeguard
-  console.log('[Background][handlePdfSelection] Value of frontGenerationTemplate BEFORE safeguard (first 100 chars):', frontGenerationTemplate ? `"${frontGenerationTemplate.substring(0,100)}..."` : String(frontGenerationTemplate));
-  console.log('[Background][handlePdfSelection] Value of historyPromptId BEFORE safeguard:', historyPromptId);
-  console.log('[Background][handlePdfSelection] Value of historyPromptLabel BEFORE safeguard:', historyPromptLabel);
-
-  // CRITICAL SAFEGUARD:
-  if (!frontGenerationTemplate || typeof frontGenerationTemplate !== 'string' || frontGenerationTemplate.trim() === "") {
-      console.warn('[Background][handlePdfSelection] WARNING: frontGenerationTemplate was invalid or empty. Forcing to SYSTEM_DEFAULT_BASIC_PROMPT_TEXT. Original settings.selectedPrompt was:', settings.selectedPrompt);
-      frontGenerationTemplate = SYSTEM_DEFAULT_BASIC_PROMPT_TEXT;
-      historyPromptId = 'system-default-basic';
-      historyPromptLabel = 'System Default - Basic Cards';
-      console.log('[Background][handlePdfSelection] Safeguard applied. New frontGenerationTemplate (first 100 chars):', frontGenerationTemplate?.substring(0, 100));
-  }
-
-  // 4. Build backHtml (Cloze or Basic)
-  const isCloze = /cloze/i.test(settings.modelName);
-  const rawText = info.selectionText;
   let backHtml = generateBackWithSource(`<p>${rawText}</p>`, pageTitle, pageUrl, { noSource: !pageUrl });
-  let clozeText = null; // <-- Track cloze text for history
+  let clozeText = null;
 
+  // Handle cloze generation
   if (isCloze && settings.gptEnabled) {
-    console.log('[handlePdfSelection] Attempting GPT Cloze generation for PDF text.');
     try {
       const effectiveClozeGuidance = settings.clozeGuide || SYSTEM_DEFAULT_CLOZE_GUIDANCE_TEXT;
       const clozed = await generateClozeWithRetry(
-        rawText,
+        rawText, // For PDFs, info.selectionText is already plain text
         effectiveClozeGuidance,
         pageTitle,
         pageUrl,
         settings.openaiKey,
         settings.gptModel
       );
-      clozeText = clozed; // <-- Save for history
-      console.log('[handlePdfSelection] GPT Cloze generation successful. Clozed text (first 100 chars):', clozed?.substring(0, 100));
+      clozeText = clozed;
       backHtml = generateBackWithSource(clozed, pageTitle, pageUrl, { noSource: true });
     } catch (err) {
       console.error("[handlePdfSelection] GPT Cloze generation failed:", err);
@@ -848,116 +801,68 @@ async function handlePdfSelection(info, tab) {
         title: 'Zawrick PDF Error',
         message: 'GPT Cloze generation failed: ' + err.message + '. Falling back to raw text.'
       });
-      backHtml = generateBackWithSource(`<p>${rawText}</p>`, pageTitle, pageUrl, { noSource: true });
     }
   }
 
-  // 5. Front generation (Basic card and GPT enabled)
+  // Handle front generation
   let front = "";
   let gptFailed = false;
 
-  if (settings.selectedPrompt === 'system-default-basic') {
-    frontGenerationTemplate = SYSTEM_DEFAULT_BASIC_PROMPT_TEXT;
-    historyPromptId = 'system-default-basic';
-    historyPromptLabel = 'System Default - Basic Cards';
-  } else if (settings.selectedPrompt === 'system-default-cloze') {
-    frontGenerationTemplate = SYSTEM_DEFAULT_BASIC_PROMPT_TEXT;
-    historyPromptId = 'system-default-basic';
-    historyPromptLabel = 'System Default - Basic Cards';
-  } else {
-    const userSelectedProfile = (settings.prompts || []).find(p => p.id === settings.selectedPrompt);
-    if (userSelectedProfile) {
-      frontGenerationTemplate = userSelectedProfile.template;
-      historyPromptId = userSelectedProfile.id;
-      historyPromptLabel = userSelectedProfile.label;
-    } else if (settings.prompts && settings.prompts.length > 0) {
-      frontGenerationTemplate = settings.prompts[0].template;
-      historyPromptId = settings.prompts[0].id;
-      historyPromptLabel = settings.prompts[0].label;
-    } else {
-      frontGenerationTemplate = SYSTEM_DEFAULT_BASIC_PROMPT_TEXT;
-      historyPromptId = 'system-default-basic';
-      historyPromptLabel = 'System Default - Basic Cards';
-    }
-  }
-
   if (!isCloze && settings.gptEnabled && isValidOpenAiKey(settings.openaiKey)) {
-    // FINAL log before calling generateFrontWithRetry
-    console.log("[Background][handlePdfSelection] FINAL check before generateFrontWithRetry. _resolvedTemplateString will be (first 100 chars):", frontGenerationTemplate?.substring(0, 100));
     try {
       front = await generateFrontWithRetry(rawText, {
         pageTitle,
         pageUrl,
         openaiKey: settings.openaiKey,
         gptModel: settings.gptModel,
-        _resolvedTemplateString: frontGenerationTemplate // Always use the safeguarded value here
+        _resolvedTemplateString: promptInfo.template
       });
-      console.log('[Background][handlePdfSelection] GPT generated front:', front);
 
-      // Store prompt history entry only on success
-      console.log('[Background][handlePdfSelection][Basic] Pre-history check. Settings.gptEnabled:', settings.gptEnabled, 'isValidOpenAiKey:', isValidOpenAiKey(settings.openaiKey), 'Generated front (first 50 chars):', front?.substring(0,50));
-      console.log('[Background][handlePdfSelection][Basic] Condition (front && front.trim()) evaluates to:', (front && front.trim()));
+      // Store history on success
       if (front && front.trim()) {
-        const historyObj = {
+        await storePromptHistory({
           timestamp: Date.now(),
-          promptId: historyPromptId,
-          promptLabel: historyPromptLabel,
-          promptTemplate: frontGenerationTemplate,
+          promptId: promptInfo.id,
+          promptLabel: promptInfo.label,
+          promptTemplate: promptInfo.template,
           generatedFront: front,
           sourceText: rawText.substring(0, 200) + (rawText.length > 200 ? '...' : ''),
-          pageTitle: pageTitle,
-          pageUrl: pageUrl,
+          pageTitle,
+          pageUrl,
           modelName: settings.modelName,
           deckName: settings.deckName
-        };
-        console.log('[Background][handlePdfSelection][Basic] CONDITIONS MET. Calling storePromptHistory for PDF basic card. Data being prepared:', JSON.stringify(historyObj, null, 2));
-        await storePromptHistory(historyObj);
+        });
       }
-      gptFailed = false;
     } catch (err) {
-      // Diagnostic: log GPT failure and skip history
-      console.error('[Background][handlePdfSelection][Basic] GPT front generation FAILED. History will NOT be saved for this attempt. Error:', err);
+      console.error('[handlePdfSelection] GPT front generation failed:', err);
       gptFailed = true;
       front = "";
     }
   } else if (isCloze && settings.gptEnabled && clozeText) {
-    // Diagnostic before storePromptHistory for cloze PDF
-    const historyObj = {
+    // Store cloze history
+    await storePromptHistory({
       timestamp: Date.now(),
-      promptId: historyPromptId,
-      promptLabel: historyPromptLabel,
+      promptId: promptInfo.id,
+      promptLabel: promptInfo.label,
       promptTemplate: SYSTEM_DEFAULT_CLOZE_GUIDANCE_TEXT,
-      generatedFront: "", // No front for cloze, or could use rawText
+      generatedFront: "",
       generatedClozeText: clozeText,
       sourceText: rawText.substring(0, 200) + (rawText.length > 200 ? '...' : ''),
-      pageTitle: pageTitle,
-      pageUrl: pageUrl,
+      pageTitle,
+      pageUrl,
       modelName: settings.modelName,
       deckName: settings.deckName
-    };
-    console.log('[Background][handlePdfSelection][Cloze] CONDITIONS MET. Calling storePromptHistory for PDF cloze card. ClozeText (first 50 chars):', clozeText?.substring(0,50), 'Data being prepared:', JSON.stringify(historyObj, null, 2));
-    await storePromptHistory(historyObj);
+    });
   }
 
-  // 6. Determine if manual review is needed
-  const needsManualReview =
-    !settings.gptEnabled ||
-    gptFailed ||
-    settings.alwaysConfirm ||
-    (isCloze && !settings.gptEnabled) ||
-    (!isCloze && !front.trim() && settings.gptEnabled);
+  // Determine if manual review is needed
+  const needsManualReview = !settings.gptEnabled || gptFailed || settings.alwaysConfirm ||
+    (isCloze && !settings.gptEnabled) || (!isCloze && !front.trim() && settings.gptEnabled);
 
-  // Log the values that contribute to needsManualReview
-  console.log('[handlePdfSelection] Determining review status. Settings:', { gptEnabled: settings.gptEnabled, alwaysConfirm: settings.alwaysConfirm }, 'GPT Failed:', gptFailed, 'Is Cloze:', isCloze, 'Generated Front (trimmed):', front?.trim());
-  console.log('[handlePdfSelection] Calculated needsManualReview:', needsManualReview);
-
-  // --- PDF Review Queue Feature ---
   if (needsManualReview) {
-    console.log('[handlePdfSelection] Path: Needs Manual Review for PDF card.');
-
-    // Build card object for review queue
+    // Add to PDF review queue
     const cardObj = {
-      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : (Math.random().toString(36).slice(2) + Date.now()),
+      id: crypto?.randomUUID?.() || (Math.random().toString(36).slice(2) + Date.now()),
       timestamp: Date.now(),
       sourceText: rawText,
       generatedFront: front || "",
@@ -966,7 +871,8 @@ async function handlePdfSelection(info, tab) {
       originalPageUrl: pageUrl,
       originalDeckName: settings.deckName,
       originalModelName: settings.modelName,
-      isCloze: !!isCloze
+      isCloze: !!isCloze,
+      imageHtml: imageHtmlForExtra // Include image in PDF review queue
     };
 
     try {
@@ -974,7 +880,7 @@ async function handlePdfSelection(info, tab) {
       const reviewArr = Array.isArray(storage.pendingReviewPdfCards) ? storage.pendingReviewPdfCards : [];
       reviewArr.unshift(cardObj);
       await chrome.storage.local.set({ pendingReviewPdfCards: reviewArr });
-      console.log('[handlePdfSelection] PDF card added to pendingReviewPdfCards. New queue length:', reviewArr.length);
+      
       chrome.notifications.create('pdf_card_for_review_' + Date.now(), {
         type: 'basic',
         iconUrl: 'icons/icon128.png',
@@ -982,7 +888,6 @@ async function handlePdfSelection(info, tab) {
         message: 'A card created from a PDF has been added to your review queue in the extension options.'
       });
     } catch (err) {
-      console.error('[handlePdfSelection] Failed to save PDF card to review queue:', err);
       chrome.notifications.create('pdf_review_queue_error_' + Date.now(), {
         type: 'basic',
         iconUrl: 'icons/icon128.png',
@@ -990,97 +895,150 @@ async function handlePdfSelection(info, tab) {
         message: 'Failed to save PDF card for review: ' + err.message
       });
     }
-    console.log('[handlePdfSelection] Exit.');
     return;
   }
 
-  // --- Auto-save path ---
-  console.log('[handlePdfSelection] Path: Auto-Save Attempt for PDF card.');
+  // Auto-save
   try {
-    await saveToAnkiOrQueue(isCloze ? backHtml : front, backHtml, settings, null);
-    console.log('[handlePdfSelection] Auto-save: Call to saveToAnkiOrQueue completed for PDF card.');
+    await saveToAnkiOrQueue(isCloze ? backHtml : front, backHtml, settings, null, pageTitle, pageUrl, imageHtmlForExtra);
     chrome.notifications.create('pdf_autosave_processed_' + Date.now(), {
       type: 'basic',
       iconUrl: 'icons/icon128.png',
       title: 'Zawrick: PDF Card Processed',
-      message: 'Card from PDF selection has been processed. Check Anki or your pending queue. (Background console has details)'
+      message: 'Card from PDF selection has been processed successfully.'
     });
   } catch (err) {
-    console.error('[handlePdfSelection] Auto-save: Error during saveToAnkiOrQueue for PDF card:', err);
     chrome.notifications.create('pdf_autosave_error_' + Date.now(), {
       type: 'basic',
       iconUrl: 'icons/icon128.png',
       title: 'Zawrick: PDF Auto-Save Error',
-      message: 'Failed to process card from PDF for auto-save: ' + err.message
+      message: 'Failed to process card from PDF: ' + err.message
     });
   }
-  console.log('[handlePdfSelection] Exit.');
 }
 
 // ── Message Listeners ───────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('[Background][onMessage] Received message:', message.action, 'from sender:', sender);
+
+  // Handler for PDF card finalization
   if (message.action === "saveFinalizedPdfCard") {
-    // Wrap in async IIFE to use await inside listener
     (async () => {
         try {
-            console.log('[Background][onMessage][saveFinalizedPdfCard] Async task: Attempting to save/queue card:', message.cardData);
+            console.log('[Background][onMessage][saveFinalizedPdfCard] Processing card:', message.cardData);
+            
+            // Extract imageHtml from the card data if it exists
+            const imageHtml = message.cardData.imageHtml || "";
+            const pageTitle = message.cardData.pageTitle || 'PDF Review';
+            const pageUrl = message.cardData.pageUrl || '';
+            
             await saveToAnkiOrQueue(
                 message.cardData.front,
                 message.cardData.backHtml,
                 { deckName: message.cardData.deckName, modelName: message.cardData.modelName },
-                null // tabId
+                null, // tabId
+                pageTitle,
+                pageUrl,
+                imageHtml
             );
-            console.log('[Background][onMessage][saveFinalizedPdfCard] Async task: saveToAnkiOrQueue completed.');
+            console.log('[Background][onMessage][saveFinalizedPdfCard] saveToAnkiOrQueue completed.');
 
-            const successNotificationId = 'finalized_pdf_card_saved_' + Date.now();
-            console.log('[Background][onMessage][saveFinalizedPdfCard] Async task: Creating success system notification:', successNotificationId);
-            chrome.notifications.create(successNotificationId, {
+            chrome.notifications.create('finalized_pdf_card_saved_' + Date.now(), {
                 type: 'basic',
                 iconUrl: 'icons/icon128.png',
                 title: 'Zawrick: Reviewed Card Processed',
                 message: 'The reviewed card has been sent to Anki (or your pending queue).'
             });
 
-            console.log('[Background][onMessage][saveFinalizedPdfCard] Async task: Sending SUCCESS response.');
             sendResponse({ success: true });
         } catch (err) {
-            console.error('[Background][onMessage][saveFinalizedPdfCard] Async task: Error processing card:', err, 'Data was:', message.cardData);
-            const errorNotificationId = 'finalized_pdf_card_error_' + Date.now();
-            console.log('[Background][onMessage][saveFinalizedPdfCard] Async task: Creating error system notification:', errorNotificationId);
-            chrome.notifications.create(errorNotificationId, {
+            console.error('[Background][onMessage][saveFinalizedPdfCard] Error processing card:', err);
+            chrome.notifications.create('finalized_pdf_card_error_' + Date.now(), {
                 type: 'basic',
                 iconUrl: 'icons/icon128.png',
                 title: 'Zawrick: Save Error',
                 message: 'Failed to process reviewed card: ' + (err.message || "Unknown background error")
             });
-            console.log('[Background][onMessage][saveFinalizedPdfCard] Async task: Sending ERROR response.');
             sendResponse({ success: false, error: err.message || 'Unknown error in background processing' });
         }
-    })(); // Call the async function
-
-    console.log('[Background][onMessage][saveFinalizedPdfCard] Handler setup for async response. Returning true.');
-    return true; // Essential: Synchronously return true to keep the message port open
-  }
-
-  // Handler for manualSave (if asynchronous and uses sendResponse)
-  if (msg.action === "manualSave") {
-    console.log('[Background][onMessage][manualSave] Received message. Data:', msg);
-    (async () => {
-      try {
-        await saveToAnkiOrQueue(
-          msg.front,
-          msg.backHtml,
-          { deckName: msg.deckName, modelName: msg.modelName },
-          sender.tab ? sender.tab.id : null
-        );
-        sendResponse({ success: true });
-      } catch (err) {
-        sendResponse({ success: false, error: err.message || 'Unknown error in background' });
-      }
     })();
-    console.log('[Background][onMessage][manualSave] Intending to respond asynchronously, returning true.');
     return true;
   }
-  // ...existing code...
+
+  // Handler for manual save from content script
+  if (message.action === "manualSave") {
+    console.log('[Background][onMessage][manualSave] Received message. Data:', message);
+    (async () => {
+      try {
+        const deckName = message.deckName || "Default";
+        const modelName = message.modelName || "Basic";
+        const front = message.front || "";
+        const back = message.back || "";
+        
+        const settings = {
+          deckName: deckName,
+          modelName: modelName
+        };
+
+        console.log('[Background][onMessage][manualSave] Calling saveToAnkiOrQueue with:', {
+          front,
+          back,
+          settings,
+          tabId: sender.tab?.id,
+          pageTitle: message.pageTitle,
+          pageUrl: message.pageUrl,
+          imageHtml: message.imageHtml
+        });
+
+        await saveToAnkiOrQueue(front, back, settings, sender.tab?.id, message.pageTitle, message.pageUrl, message.imageHtml);
+        sendResponse({ success: true });
+      } catch (err) {
+        console.error('[Background][onMessage][manualSave] Error:', err);
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  // Handler for getting PDF review cards
+  if (message.action === "getPendingPdfCards") {
+    (async () => {
+      try {
+        const cards = await getPendingPdfCards();
+        sendResponse({ success: true, cards });
+      } catch (err) {
+        console.error('[Background][onMessage][getPendingPdfCards] Error:', err);
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  // Handler for removing PDF card
+  if (message.action === "removePdfCard") {
+    (async () => {
+      try {
+        const success = await removePdfCard(message.cardId);
+        sendResponse({ success });
+      } catch (err) {
+        console.error('[Background][onMessage][removePdfCard] Error:', err);
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  // Handler for getting selection HTML
+  if (message.action === "getSelectionHtml") {
+    // This should be handled by content script, not background
+    console.warn('[Background][onMessage] getSelectionHtml should not reach background script');
+    sendResponse({ html: "", error: "Invalid routing - this should be handled by content script" });
+    return false;
+  }
+
+  // Unknown action
+  console.warn('[Background][onMessage] Unknown action:', message.action);
+  sendResponse({ success: false, error: 'Unknown action: ' + message.action });
+  return false;
 });
 

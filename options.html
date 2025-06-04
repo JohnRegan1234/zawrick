@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>bronki</title>
+    <title>Zawrick Options</title>
     <!-- Remove all <style> blocks and use only the external CSS file -->
     <link rel="stylesheet" href="options.css">
 </head>
@@ -13,7 +13,7 @@
     <div class="header">
         <img src="icons/icon64.png" alt="Zawrick Icon" />
         <h1>Zawrick</h1>
-        <span class="version">v1.3</span>
+        <span class="version">v1.4</span>
     </div>
 
     <!-- Inline notification banner -->
@@ -26,8 +26,9 @@
         <button class="refresh-btn" id="refresh-status">↻</button>
     </div>
     <div class="help-box error" id="status-help">
-        Anki isn't running or <a href="https://ankiweb.net/shared/info/2055492159" class="link" target="_blank">
-            <a href="https://ankiweb.net/shared/info/2055492159" class="link styled-link" target="_blank">AnkiConnect</a> isn't enabled. Don't worry, new cards will be safe in your browser until Anki starts.<br />
+        Anki isn't running or
+        <a href="https://ankiweb.net/shared/info/2055492159" class="link styled-link" target="_blank">AnkiConnect</a>
+        isn't enabled. Don't worry, new cards will be safe in your browser until Anki starts.<br />
     </div>
 
     <!-- Pending cards with tooltip -->
@@ -49,26 +50,12 @@
             <div class="section-body" id="anki-body">
                 <div class="section-body-content">
                     <div class="form-group">
-                        <label class="form-label" for="anki-deck-custom-trigger">Deck to use</label>
-                        <div class="custom-select-wrapper" id="anki-deck-custom-wrapper">
-                            <button type="button" id="anki-deck-custom-trigger" class="form-input custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
-                                <span id="anki-deck-selected-value" class="selected-value"></span>
-                                <span class="custom-select-arrow"></span>
-                            </button>
-                            <div id="anki-deck-options" class="custom-select-options" role="listbox" style="display: none;"></div>
-                        </div>
-                        <select id="anki-deck" class="form-select" style="display: none;"></select>
+                        <label class="form-label" for="anki-deck">Deck to use</label>
+                        <select id="anki-deck" class="form-select"></select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="anki-note-type-custom-trigger">Note Model to use</label>
-                        <div class="custom-select-wrapper" id="anki-note-type-custom-wrapper">
-                            <button type="button" id="anki-note-type-custom-trigger" class="form-input custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
-                                <span id="anki-note-type-selected-value" class="selected-value"></span>
-                                <span class="custom-select-arrow"></span>
-                            </button>
-                            <div id="anki-note-type-options" class="custom-select-options" role="listbox" style="display: none;"></div>
-                        </div>
-                        <select id="anki-note-type" class="form-select" style="display: none;"></select>
+                        <label class="form-label" for="anki-note-type">Note Model to use</label>
+                        <select id="anki-note-type" class="form-select"></select>
                     </div>
                 </div>
             </div>
@@ -202,7 +189,7 @@
                 <div class="section-body-content">
                     <div class="history-controls">
                         <button id="refresh-pdf-review-list-btn" class="btn btn-secondary">Refresh List</button>
-                        <button id="clear-all-pdf-review-btn" class="btn btn-secondary error">Clear All Review Cards</button>
+                        <button id="clear-pdf-history" class="btn btn-secondary error">Clear All PDF Cards</button>
                         <span class="history-count count-badge" id="pdf-review-count">0 cards for review</span>
                     </div>
                     <p class="help-text" style="margin-bottom: var(--gap-sm);">

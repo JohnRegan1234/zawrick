@@ -17,6 +17,7 @@
 - **Prompt History**: Track and review all your AI-generated cards with detailed prompt information.
 - **Multiple Note Types**: Supports Basic, Cloze, and custom Anki note models.
 - **Modern UI**: Custom dropdowns, collapsible help, accessible notifications, and more.
+- **Template Variables**: Use `{{text}}`, `{{title}}`, and `{{url}}` in your prompts to customize AI-generated content.
 
 ---
 
@@ -61,6 +62,7 @@
 - **Review Mode**: Toggle "Always review cards before saving" for manual confirmation.
 - **Prompt History**: Review all AI-generated cards and their prompts.
 - **Offline Support**: Cards queue locally if Anki is unavailable.
+- **Status Indicator**: Visual indicator shows when Anki is connected and ready to receive cards.
 
 ---
 
@@ -117,6 +119,7 @@ Licensed under the [Apache License 2.0](LICENSE.txt).
 - **Error Handling**: Graceful fallbacks when services are unavailable.
 - **Privacy-Focused**: OpenAI API key stored locally, never transmitted to third parties.
 - **Codebase**: Written in modern JavaScript (ES2022+), modular, and easy to extend.
+- **Version**: Current version is 1.4 with enhanced prompt capabilities and improved error handling.
 
 ---
 

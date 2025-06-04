@@ -75,4 +75,33 @@ document.addEventListener('DOMContentLoaded', () => {
             statusTextEl.textContent = STATUS_TEXT.offline;
         }
     };
+
+    // Add debug logging for section toggle clicks
+    document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('section-toggle')) {
+            console.log('[DEBUG][section-toggle] Toggle clicked:', {
+                target: e.target,
+                currentText: e.target.textContent,
+                parentSection: e.target.closest('.section')?.id,
+                sectionClasses: Array.from(e.target.closest('.section')?.classList || [])
+            });
+            
+            const section = e.target.closest('.section');
+            const sectionBody = section?.querySelector('.section-body');
+            
+            console.log('[DEBUG][section-toggle] Section elements found:', {
+                section: section?.id,
+                sectionBody: sectionBody?.id || 'no-id',
+                hasCollapsedClass: section?.classList.contains('collapsed')
+            });
+            
+            // Let the main handler in options.js run, then log the result
+            setTimeout(() => {
+                console.log('[DEBUG][section-toggle] After toggle:', {
+                    sectionClasses: Array.from(section?.classList || []),
+                    toggleText: e.target.textContent
+                });
+            }, 100);
+        }
+    });
 });

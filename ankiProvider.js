@@ -1,4 +1,4 @@
-export async function addToAnki(front, backHtml, deckName = "Default", modelName = "Basic") {
+export async function addToAnki(front, backHtml, deckName = "Default", modelName = "Basic", extraFieldContent = "") {
     // Cloze notes use Text / Extra instead of Front / Back
     const isCloze = /cloze/i.test(modelName);
     
@@ -7,7 +7,7 @@ export async function addToAnki(front, backHtml, deckName = "Default", modelName
         // For cloze cards, the content should be in the Text field
         fields = { 
             Text: backHtml || front || "", 
-            Extra: "" 
+            Extra: extraFieldContent || ""
         };
     } else {
         // For basic cards, both fields are required by Anki
