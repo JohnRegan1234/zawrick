@@ -1,0 +1,36 @@
+{
+  "name": "zawrick",
+  "version": "1.5.0",
+  "description": "**Zawrick** is a powerful browser extension that transforms web and PDF text into Anki flashcards with AI-powered question generation. Highlight text anywhere in your browser and instantly create high-quality flashcards for your studies.",
+  "main": "ankiProvider.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:debug": "jest --verbose",
+    "test:specific": "jest --testNamePattern"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JohnRegan1234/zawrick.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/JohnRegan1234/zawrick/issues"
+  },
+  "homepage": "https://github.com/JohnRegan1234/zawrick#readme",
+  "devDependencies": {
+    "@babel/core": "^7.27.4",
+    "@babel/preset-env": "^7.27.2",
+    "babel-jest": "^30.0.0-beta.3",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^30.0.0-beta.3",
+    "jsdom": "^26.1.0",
+    "jsdom-global": "^3.0.2"
+  }
+}

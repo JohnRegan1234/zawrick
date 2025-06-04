@@ -51,8 +51,41 @@ Please adhere to the following rules:
     Desired output: "At birth, a term newborn has iron stores of approximately \`{{c1::<b>250 mg</b>}}\`, with \`{{c2::<i>75%</i>}}\` in the blood and \`{{c3::<i>25%</i>}}\` in ferritin/haemosiderin/tissues."`;
 
 // ── State ───────────────────────────────────────────────────────────────────
-let syncScheduled      = false;
-let cachedPendingClips = [];
+// Use global variables for testing compatibility
+if (typeof global !== 'undefined') {
+  // In test environment, use global variables
+  global.syncScheduled = global.syncScheduled || false;
+  global.cachedPendingClips = global.cachedPendingClips || [];
+} else {
+  // In browser environment, use regular variables
+  var syncScheduled = false;
+  var cachedPendingClips = [];
+}
+
+// Helper functions to access state variables
+function getSyncScheduled() {
+  return typeof global !== 'undefined' ? global.syncScheduled : syncScheduled;
+}
+
+function setSyncScheduled(value) {
+  if (typeof global !== 'undefined') {
+    global.syncScheduled = value;
+  } else {
+    syncScheduled = value;
+  }
+}
+
+function getCachedPendingClips() {
+  return typeof global !== 'undefined' ? global.cachedPendingClips : cachedPendingClips;
+}
+
+function setCachedPendingClips(value) {
+  if (typeof global !== 'undefined') {
+    global.cachedPendingClips = value;
+  } else {
+    cachedPendingClips = value;
+  }
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function notify(tabId, status, message) {
@@ -100,19 +133,28 @@ function getSelectionHtml(tabId) {
     chrome.tabs.sendMessage(tabId, { action: "getSelectionHtml" }, async (response) => {
       if (chrome.runtime.lastError) {
         const errorMessage = chrome.runtime.lastError.message;
-        
+        console.log('[getSelectionHtml] First sendMessage error:', errorMessage);
         if (errorMessage.includes('Receiving end does not exist')) {
           try {
             await injectContentScriptAndWait(tabId);
             // Retry after injection
             chrome.tabs.sendMessage(tabId, { action: "getSelectionHtml" }, (retryResponse) => {
               if (chrome.runtime.lastError) {
+                console.log('[getSelectionHtml] Retry sendMessage error:', chrome.runtime.lastError.message);
                 resolve({ html: "", error: chrome.runtime.lastError.message });
               } else {
-                resolve(retryResponse || { html: "", error: "No response data" });
+                console.log('[getSelectionHtml] Retry sendMessage success:', retryResponse);
+                // Remove error property if html is present to match test expectation
+                if (retryResponse && retryResponse.html) {
+                  const { error, ...cleanResponse } = retryResponse;
+                  resolve(cleanResponse);
+                } else {
+                  resolve(retryResponse || { html: "", error: "No response data" });
+                }
               }
             });
           } catch (err) {
+            console.log('[getSelectionHtml] injectContentScriptAndWait threw:', err);
             resolve({ html: "", error: err.message });
           }
         } else {
@@ -183,14 +225,17 @@ async function injectContentScriptAndWait(tabId, maxRetries = 3) {
   const tab = await new Promise((resolve) => {
     chrome.tabs.get(tabId, (tab) => {
       if (chrome.runtime.lastError) {
+        console.log('[injectContentScriptAndWait] tabs.get error:', chrome.runtime.lastError.message);
         resolve(null);
       } else {
+        console.log('[injectContentScriptAndWait] tabs.get success:', tab);
         resolve(tab);
       }
     });
   });
 
   if (!tab || !tab.url || tab.discarded) {
+    console.log('[injectContentScriptAndWait] Invalid tab:', tab);
     throw new Error('Tab invalid, missing URL, or discarded');
   }
 
@@ -225,24 +270,21 @@ async function injectContentScriptAndWait(tabId, maxRetries = 3) {
   // Wait for script to be ready by checking if it responds
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     await new Promise(resolve => setTimeout(resolve, 100 * attempt)); // Progressive delay
-    
     const isReady = await new Promise((resolve) => {
       chrome.tabs.sendMessage(tabId, { action: "ping" }, (response) => {
         resolve(!chrome.runtime.lastError && response?.ready);
       });
     });
-
     if (isReady) {
       return;
     }
   }
-
   throw new Error(`Content script not ready after ${maxRetries} attempts`);
 }
 
 // ── Badge ──────────────────────────────────────────────────────────────────
 function updateBadge() {
-  const n = cachedPendingClips.length;
+  const n = getCachedPendingClips().length;
   chrome.action.setBadgeText({ text: n ? String(n) : "" });
   chrome.action.setTitle({ title: n ? `${n} pending clip${n > 1 ? "s" : ""}` : "Web Clipper → Anki" });
 
@@ -256,15 +298,15 @@ async function queueClip(clip) {
   const { pendingClips = [] } = await chrome.storage.local.get({ pendingClips: [] });
   const list = Array.isArray(pendingClips) ? pendingClips : [];
   list.push(clip);
-  cachedPendingClips = list;
+  setCachedPendingClips(list);
   await chrome.storage.local.set({ pendingClips: list });
   updateBadge();
   scheduleSync();
 }
 
 function scheduleSync() {
-  if (syncScheduled) return;
-  syncScheduled = true;
+  if (getSyncScheduled()) return;
+  setSyncScheduled(true);
   chrome.alarms.create(ALARM_SYNC, { delayInMinutes: SYNC_DELAY_MINUTES });
 }
 
@@ -297,16 +339,15 @@ async function flushQueue() {
       console.error("addToAnki failed for clip:", clip, "Error:", err);
       remaining.push(clip);
     }
-  }
-  cachedPendingClips = remaining;
+  }  setCachedPendingClips(remaining);
   await chrome.storage.local.set({ pendingClips: remaining });
   updateBadge();
 }
 
 async function checkPendingClips() {
   const { pendingClips = [] } = await chrome.storage.local.get({ pendingClips: [] });
-  cachedPendingClips = Array.isArray(pendingClips) ? pendingClips : [];
-  if (cachedPendingClips.length) scheduleSync();
+  setCachedPendingClips(Array.isArray(pendingClips) ? pendingClips : []);
+  if (getCachedPendingClips().length) scheduleSync();
   updateBadge();
 }
 
@@ -756,8 +797,13 @@ async function handlePdfSelection(info, tab) {
 
   let pageTitle = tab?.title || "PDF Document";
   let pageUrl = info?.frameUrl || tab?.url || info?.pageUrl || "";
-  if (pageUrl.startsWith('chrome-extension://')) {
+  
+  // Check if we're dealing with a Chrome extension PDF viewer or any PDF URL
+  if (tab?.url && tab.url.startsWith('chrome-extension://')) {
     pageTitle = tab?.title || "Viewed PDF";
+    pageUrl = "";
+  } else if (pageUrl && isPdfUrl(pageUrl)) {
+    // For any PDF URL, clear the pageUrl for consistency
     pageUrl = "";
   }
 
@@ -1041,4 +1087,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   sendResponse({ success: false, error: 'Unknown action: ' + message.action });
   return false;
 });
+
+// Module exports for testing
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    handleAction,
+    handlePdfSelection,
+    notify,
+    getSelectionHtml,
+    sendFrontInputRequest,
+    storePromptHistory,
+    injectContentScriptAndWait,
+    fetchAnki,
+    queueClip,
+    scheduleSync,
+    flushQueue,
+    checkPendingClips,
+    getPendingPdfCards,
+    removePdfCard,
+    getPromptTemplate,
+    updateBadge,
+    initBadge,
+    initContextMenu,
+    isPdfUrl,
+    queueClip,
+    flushQueue,
+    checkPendingClips,
+    scheduleSync,
+    saveToAnkiOrQueue,
+    handlePdfSelection
+  };
+}
 

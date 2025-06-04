@@ -1,5 +1,445 @@
 // options.js
 
+// ── EXPORTABLE FUNCTIONS (defined outside DOMContentLoaded for testing) ──────
+// ----- Helpers -----
+function toggleGPTSection(on) {
+    const gptBody = document.getElementById('gpt-section')?.querySelector('.section-body');
+    if (!gptBody) return;
+    const inputs = gptBody.querySelectorAll('input, select, textarea, button:not(.section-toggle)');
+    gptBody.style.opacity = on ? '1' : '0.5';
+    inputs.forEach(el => {
+        // Don't disable the enable GPT checkbox itself
+        if (el.id === 'enable-gpt') return;
+        el.disabled = !on;
+    });
+}
+
+const uid = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    // Fallback: RFC4122 version 4 compliant
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+};
+
+// ── AnkiConnect Helpers ──────────────────────────────────────────────
+async function fetchAnki(action, params = {}) {
+    try {
+        const res = await fetch('http://127.0.0.1:8765', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action, version: 6, params })
+        });
+        if (!res.ok) throw new Error(`Network error: ${res.status}`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        return data.result;
+    } catch (err) {
+        console.error(`AnkiConnect action "${action}" failed:`, err);
+        throw err;
+    }
+}
+
+async function fetchDeckNames() {
+    try {
+        return await fetchAnki("deckNames");
+    } catch (err) {
+        console.warn('[Options][fetchDeckNames] Could not fetch deck names:', err);
+        return [];
+    }
+}
+
+async function fetchModelNames() {
+    try {
+        return await fetchAnki("modelNames");
+    } catch (err) {
+        console.warn('[Options][fetchModelNames] Could not fetch model names:', err);
+        return ['Basic', 'Cloze'];
+    }
+}
+
+// ----- OpenAI test -----
+async function testOpenAI(apiKey){
+    if (!apiKey || !apiKey.trim()) return { error: 'No API key provided' };
+    if (!apiKey.startsWith('sk-')) return { error: 'Invalid API key format' };
+
+    try {
+        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'gpt-3.5-turbo',
+                messages: [{ role: 'user', content: 'Test' }],
+                max_tokens: 10
+            })
+        });
+
+        if (resp.ok) return { success: true };
+        if (resp.status === 401) return { error: 'Invalid API key' };
+        return { error: 'API error' };
+    } catch {
+        return { error: 'Network error' };
+    }
+}
+
+// ----- Storage helpers -----
+const loadSettings = ()=>new Promise(resolve=>{
+    chrome.storage.local.get({
+        deckName   : 'Default',
+        modelName  : 'Basic',
+        gptEnabled : false,
+        openaiKey  : '',
+        confirmGpt : false,
+        alwaysConfirm: true,
+        prompts    : [{
+            id      : 'basic-default',
+            label   : 'Default Basic',
+            template: `You are an expert Anki flash-card creator. Given an HTML snippet ({{text}}) that will appear on the back of a card from a page titled "{{title}}" ({{url}}), write ONE clear question for the front that tests the snippet's single most important idea. Output ONLY the question.`
+        }],
+        selectedPrompt: 'basic-default'
+    },resolve);
+});
+
+const saveSettings = s=>new Promise(resolve=>{
+    chrome.storage.local.set(s,()=>{
+        if (typeof window !== 'undefined' && window.showUINotification) {
+            window.showUINotification('Settings saved');
+        }
+        resolve();
+    });
+});
+
+const updatePendingCards = async (doc = document) => {
+    const {pendingClips=[]} = await chrome.storage.local.get({pendingClips: []});
+    const pendingCount = doc.getElementById('pending-count');
+    if (pendingCount) {
+        pendingCount.textContent = `${pendingClips.length}`;
+        return true; // Return success for testing
+    }
+    return false; // Return failure for testing
+};
+
+// Helper function for unique labels
+function getUniquePromptLabel(baseLabel, existingPrompts, excludeId = null) {
+    if (!baseLabel.trim()) return 'Untitled';
+    
+    let counter = 0;
+    let candidate = baseLabel;
+    
+    while (existingPrompts.some(p => p.id !== excludeId && p.label === candidate)) {
+        counter++;
+        candidate = `${baseLabel} (${counter})`;
+    }
+    
+    return candidate;
+}
+
+// Section toggle functionality
+function toggleSection(body, toggle, initialExpandedState = null) {
+    const sectionElement = body.closest('.section');
+    if (!sectionElement || !toggle) return;
+
+    let shouldBeExpanded;
+    if (initialExpandedState !== null) {
+        shouldBeExpanded = initialExpandedState;
+    } else {
+        shouldBeExpanded = !sectionElement.classList.contains('collapsed');
+    }
+
+    if (shouldBeExpanded) {
+        sectionElement.classList.remove('collapsed');
+        toggle.textContent = '▾';
+    } else {
+        sectionElement.classList.add('collapsed');
+        toggle.textContent = '▸';
+    }
+}
+
+// Status and refresh functions
+async function refreshAnkiStatus() {
+    const statusText = document.getElementById('status-text');
+    const statusHelp = document.getElementById('status-help');
+    const deckSel = document.getElementById('anki-deck');
+    const modelSel = document.getElementById('anki-note-type');
+    
+    if (!statusText) return;
+
+    try {
+        statusText.textContent = 'Connecting...';
+        statusText.className = 'status-connecting';
+
+        // Fetch all required data at once
+        const [decks, models, settings] = await Promise.all([
+            fetchDeckNames(),
+            fetchModelNames(),
+            loadSettings()
+        ]);
+
+        statusText.textContent = 'Connected ✓';
+        statusText.className = 'status-connected';
+        if (statusHelp) statusHelp.style.display = 'none';
+
+        // Populate the Decks dropdown
+        if (deckSel) {
+            deckSel.innerHTML = '';
+            decks.forEach(deck => deckSel.add(new Option(deck, deck)));
+            deckSel.value = settings.deckName;
+        }
+
+        // Populate the Models dropdown
+        if (modelSel) {
+            modelSel.innerHTML = '';
+            models.forEach(model => modelSel.add(new Option(model, model)));
+            modelSel.value = settings.modelName;
+        }
+
+    } catch (error) {
+        statusText.textContent = 'Connection failed ✗';
+        statusText.className = 'status-error';
+        if (statusHelp) statusHelp.style.display = 'block';
+        console.error('Anki connection error:', error);
+    }
+}
+
+async function refreshPromptHistory() {
+    const historyList = document.getElementById('history-list');
+    const historyCount = document.getElementById('history-count');
+    
+    if (!historyList) return;
+
+    try {
+        const { promptHistory = [] } = await chrome.storage.local.get({ promptHistory: [] });
+        
+        if (historyCount) {
+            historyCount.textContent = `${promptHistory.length} entries`;
+        }
+
+        if (promptHistory.length === 0) {
+            historyList.innerHTML = '<div class="history-empty">No prompt history found.</div>';
+            return;
+        }
+
+        // Clear and rebuild
+        historyList.innerHTML = '';
+        
+        // Show most recent first
+        promptHistory.slice().reverse().slice(0, 20).forEach(entry => {
+            const item = document.createElement('div');
+            item.className = 'history-item';
+            
+            const date = new Date(entry.timestamp).toLocaleString();
+            const sourceText = entry.sourceText || 'N/A';
+            const generatedContent = entry.generatedFront || entry.generatedClozeText || 'N/A';
+            
+            item.innerHTML = `
+                <div class="history-item-header">
+                    <span class="history-prompt-label">${entry.promptLabel || 'Unknown'}</span>
+                    <span class="history-date">${date}</span>
+                </div>
+                <div class="history-item-body">
+                    <div class="history-content-block">
+                        <strong class="history-label">Source Text:</strong>
+                        <div class="history-text-content">${sourceText}</div>
+                    </div>
+                    <div class="history-content-block">
+                        <strong class="history-label">Generated Content:</strong>
+                        <div class="history-text-content">${generatedContent}</div>
+                    </div>
+                </div>
+            `;
+            historyList.appendChild(item);
+        });
+
+    } catch (error) {
+        console.error('Error loading prompt history:', error);
+        historyList.innerHTML = '<div class="history-error">Error loading history.</div>';
+    }
+}
+
+async function renderPdfReviewList() {
+    const reviewList = document.getElementById('pdf-review-list');
+    const reviewCount = document.getElementById('pdf-review-count');
+    
+    if (!reviewList) return;
+
+    try {
+        const { pendingReviewPdfCards = [] } = await chrome.storage.local.get({ pendingReviewPdfCards: [] });
+        
+        if (reviewCount) {
+            reviewCount.textContent = `${pendingReviewPdfCards.length} cards for review`;
+        }
+
+        reviewList.innerHTML = '';
+
+        if (pendingReviewPdfCards.length === 0) {
+            reviewList.innerHTML = '<div class="review-empty">No PDF cards are currently awaiting review.</div>';
+            return;
+        }
+
+        const [decks, models] = await Promise.all([fetchDeckNames(), fetchModelNames()]);
+        const deckOptions = decks.map(d => `<option value="${d}">${d}</option>`).join('');
+        const modelOptions = models.map(m => `<option value="${m}">${m}</option>`).join('');
+
+        pendingReviewPdfCards.forEach(card => {
+            const cardElement = document.createElement('div');
+            cardElement.className = 'review-card';
+            cardElement.dataset.cardId = card.id;
+            
+            cardElement.innerHTML = `
+                <div class="review-card-header">
+                    <h3 class="review-card-title">PDF Card Review</h3>
+                    <span class="review-card-date">${new Date(card.timestamp).toLocaleString()}</span>
+                </div>
+                <div class="review-card-content">
+                    <div class="review-field">
+                        <label class="review-label">Source Text:</label>
+                        <div class="review-text">${card.sourceText}</div>
+                    </div>
+                    <div class="review-field">
+                        <label class="review-label">Generated Front:</label>
+                        <div class="review-text">${card.generatedFront}</div>
+                    </div>
+                    <div class="review-field">
+                        <label class="review-label">Generated Cloze:</label>
+                        <div class="review-text">${card.generatedClozeText}</div>
+                    </div>
+                    <div class="review-settings">
+                        <div class="form-group">
+                            <label class="form-label">Deck</label>
+                            <select class="form-select deck-select">${deckOptions}</select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Note Type</label>
+                            <select class="form-select model-select">${modelOptions}</select>
+                        </div>
+                    </div>
+                </div>
+                <div class="review-card-footer">
+                    <button class="btn btn-secondary remove-btn">Remove</button>
+                    <button class="btn btn-primary save-btn">Save to Anki</button>
+                </div>
+            `;
+            reviewList.appendChild(cardElement);
+        });
+
+        // Add event listeners for the new buttons and inputs
+        reviewList.addEventListener('click', async (e) => {
+            const cardElement = e.target.closest('.review-card');
+            if (!cardElement) return;
+
+            const cardId = cardElement.dataset.cardId;
+            const cardData = pendingReviewPdfCards.find(c => c.id === cardId);
+            if (!cardData) return;
+
+            if (e.target.classList.contains('remove-btn')) {
+                const updatedCards = pendingReviewPdfCards.filter(c => c.id !== cardId);
+                await chrome.storage.local.set({ pendingReviewPdfCards: updatedCards });
+                renderPdfReviewList();
+                if (typeof window !== 'undefined' && window.showUINotification) {
+                    window.showUINotification('Card removed from review queue');
+                }
+            } else if (e.target.classList.contains('save-btn')) {
+                const deckSelect = cardElement.querySelector('.deck-select');
+                const modelSelect = cardElement.querySelector('.model-select');
+                
+                const finalCard = {
+                    front: cardData.isCloze ? cardData.generatedClozeText : cardData.generatedFront,
+                    back: cardData.isCloze ? cardData.generatedClozeText : cardData.sourceText,
+                    deckName: deckSelect.value,
+                    modelName: modelSelect.value
+                };
+
+                // Use chrome.runtime.sendMessage to communicate with background script
+                chrome.runtime.sendMessage({
+                    action: 'saveFinalizedPdfCard',
+                    cardData: finalCard
+                }, response => {
+                    if (response && response.success) {
+                        // Remove from review queue
+                        const updatedCards = pendingReviewPdfCards.filter(c => c.id !== cardId);
+                        chrome.storage.local.set({ pendingReviewPdfCards: updatedCards });
+                        renderPdfReviewList();
+                        if (typeof window !== 'undefined' && window.showUINotification) {
+                            window.showUINotification('Card saved to Anki successfully!');
+                        }
+                    } else {
+                        if (typeof window !== 'undefined' && window.showUINotification) {
+                            window.showUINotification('Failed to save card: ' + (response?.error || 'Unknown error'), 'error');
+                        }
+                    }
+                });
+            }
+        });
+
+    } catch (error) {
+        console.error('Error loading PDF review cards:', error);
+        reviewList.innerHTML = '<div class="review-error">Error loading PDF review cards.</div>';
+    }
+}
+
+async function queueClip(clip) {
+    const { pendingClips = [] } = await chrome.storage.local.get({ pendingClips: [] });
+    pendingClips.push(clip);
+    await chrome.storage.local.set({ pendingClips });
+}
+
+// UI helper functions (from options_ui.js functionality)
+function flashButtonGreen(buttonElement) {
+    if (!buttonElement || typeof buttonElement.classList === 'undefined') {
+        console.warn('[flashButtonGreen] Invalid button element provided:', buttonElement);
+        return;
+    }
+    buttonElement.classList.add('flash-success');
+    setTimeout(() => {
+        buttonElement.classList.remove('flash-success');
+    }, 1000);
+}
+
+function showUINotification(message, type = '') {
+    const notif = document.getElementById('notification');
+    if (!notif) return;
+    
+    notif.textContent = message;
+    notif.classList.remove('show', 'error');
+    
+    if (type === 'error') {
+        notif.classList.add('error');
+    }
+    
+    notif.classList.add('show');
+    
+    setTimeout(() => {
+        notif.classList.remove('show');
+    }, 3000);
+}
+
+function updateUIConnectionStatus(online) {
+    const bar = document.getElementById('status-bar');
+    const statusTextEl = document.getElementById('status-text');
+    if (!bar || !statusTextEl) return;
+    
+    const STATUS_TEXT = {
+        connected: 'Connected',
+        offline: 'Offline'
+    };
+
+    if (online) {
+        bar.classList.remove('offline', 'disconnected');
+        bar.classList.add('connected');
+        statusTextEl.textContent = STATUS_TEXT.connected;
+    } else {
+        bar.classList.add('offline', 'disconnected');
+        statusTextEl.textContent = STATUS_TEXT.offline;
+    }
+}
+
+// ── DOM CONTENT LOADED EVENT LISTENER ────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
     // ----- Element references -----
     // Status bar
@@ -269,95 +709,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // ----- Helpers -----
-    function toggleGPTSection(on) {
-        if (!gptBody) return;
-        const inputs = gptBody.querySelectorAll('input, select, textarea, button:not(.section-toggle)');
-        gptBody.style.opacity = on ? '1' : '0.5';
-        inputs.forEach(el => {
-            // Don't disable the enable GPT checkbox itself
-            if (el.id === 'enable-gpt') return;
-            el.disabled = !on;
-        });
-    }
-
-    const uid = () => {
-        if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-            return crypto.randomUUID();
-        }
-        // Fallback: RFC4122 version 4 compliant
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-            const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-            return v.toString(16);
-        });
-    };
-
-    // ── AnkiConnect Helpers ──────────────────────────────────────────────
-    async function fetchAnki(action, params = {}) {
-        try {
-            const res = await fetch('http://127.0.0.1:8765', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action, version: 6, params })
-            });
-            if (!res.ok) throw new Error(`Network error: ${res.status}`);
-            const data = await res.json();
-            if (data.error) throw new Error(data.error);
-            return data.result;
-        } catch (err) {
-            console.error(`AnkiConnect action "${action}" failed:`, err);
-            throw err;
-        }
-    }
-
-    async function fetchDeckNames() {
-        try {
-            return await fetchAnki("deckNames");
-        } catch (err) {
-            console.warn('[Options][fetchDeckNames] Could not fetch deck names:', err);
-            return [];
-        }
-    }
-
-    async function fetchModelNames() {
-        try {
-            return await fetchAnki("modelNames");
-        } catch (err) {
-            console.warn('[Options][fetchModelNames] Could not fetch model names:', err);
-            return ['Basic', 'Cloze']; // Fallback defaults
-        }
-    }
-
-    // ----- OpenAI test -----
-    async function testOpenAI(apiKey){
-        try{
-            const response = await fetch('https://api.openai.com/v1/models',{
-                headers:{'Authorization':`Bearer ${apiKey}`}
-            });
-            return {success: response.ok, error: response.ok ? null : 'API error'};
-        }catch(e){
-            return {success:false,error:'Network error'};
-        }
-    }
-
-    // ----- Storage helpers -----
-    const loadSettings = ()=>new Promise(resolve=>{
-        chrome.storage.local.get(DEFAULT_SETTINGS,resolve);
-    });
-
-    const saveSettings = s=>new Promise(resolve=>{
-        chrome.storage.local.set(s,()=>{
-            window.showUINotification('Settings saved');
-            resolve();
-        });
-    });
-
-    const updatePendingCards = async () => {
-        const {pendingClips=[]} = await chrome.storage.local.get({pendingClips: []});
-        if (pendingCount) {
-            pendingCount.textContent = `${pendingClips.length}`;
-        }
-    };
+    // ----- Use the global functions defined at module level -----
 
     // ----- UI initialisation -----
     const initializeUI = async ()=>{
@@ -1146,135 +1498,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     }
 
-    // Update queueClip to store pageTitle and pageUrl
-    async function queueClip(clip) {
-        const { pendingClips = [] } = await chrome.storage.local.get({ pendingClips: [] });
-        // clip now includes pageTitle and pageUrl
-        pendingClips.push(clip);
-        await chrome.storage.local.set({ pendingClips });
-    }
-
-    // Modify saveToAnkiOrQueue to accept pageTitle, pageUrl, and imageHtml
-    async function saveToAnkiOrQueue(front, backHtml, settings, tabId, pageTitle = "", pageUrl = "", imageHtml = "") {
-        try {
-            let extraContentForCloze = "";
-            if (/cloze/i.test(settings.modelName)) {
-                // Construct extraContentForCloze with both image and source
-                if (imageHtml) {
-                    extraContentForCloze += imageHtml;
-                    if (pageUrl) {
-                        extraContentForCloze += "<br><hr><br>"; // Add separator between image and source
-                    }
-                }
-                if (pageUrl) {
-                    // Generate source link HTML for cloze Extra field
-                    const sourceHtml = generateBackWithSource("", pageTitle, pageUrl);
-                    extraContentForCloze += sourceHtml;
-                }
-            }
-            
-            await addToAnki(front, backHtml, settings.deckName, settings.modelName, extraContentForCloze);
-            
-            // ...existing code...
-        } catch (err) {
-            if (err instanceof TypeError) { // Anki offline
-                await queueClip({ front, backHtml, ...settings, pageTitle, pageUrl, imageHtml });
-                // ...existing code...
-            }
-            // ...existing code...
-        }
-    }
-
-    // Update flushQueue to pass imageHtml
-    const flushQueue = async () => {
-        // ...existing code...
-        
-        for (const clip of pendingClips) {
-            try {
-                await saveToAnkiOrQueue(clip.front, clip.backHtml, clip, null, clip.pageTitle, clip.pageUrl, clip.imageHtml);
-                // ...existing code...
-            } catch (err) {
-                // ...existing code...
-            }
-        }
-        
-        // ...existing code...
-    };
-
-    // Update handleAction calls to detect and extract images for cloze notes
-    async function handleAction(action, tab) {
-        // ...existing code...
-        
-        const pageTitle = tab.title || 'Untitled';
-        const pageUrl = tab.url || '';
-        
-        // Extract image for cloze notes
-        let imageHtmlForExtra = "";
-        if (isCloze && selectionContent && /<img[^>]+>/i.test(selectionContent)) {
-            const imgMatch = selectionContent.match(/<img[^>]+>/i);
-            if (imgMatch) {
-                imageHtmlForExtra = imgMatch[0];
-            }
-        }
-        
-        // ...existing code...
-        
-        if (settings.alwaysConfirm || settings.confirmGpt) {
-            // ...existing code...
-            await queueClip({ front, backHtml, ...settings, pageTitle, pageUrl, imageHtml: imageHtmlForExtra });
-        } else {
-            await saveToAnkiOrQueue(front, backHtml, settings, tab.id, pageTitle, pageUrl, imageHtmlForExtra);
-        }
-        
-        // ...existing code...
-    }
-
-    // Update handlePdfSelection calls (though PDFs are unlikely to have img tags)
-    async function handlePdfSelection(selection, tab) {
-        // ...existing code...
-        
-        const pageTitle = tab.title || 'PDF Document';
-        const pageUrl = tab.url || '';
-        
-        // Extract image for cloze notes (unlikely in PDFs but for completeness)
-        let imageHtmlForExtra = "";
-        if (isCloze && info.selectionText && /<img[^>]+>/i.test(info.selectionText)) {
-            const imgMatch = info.selectionText.match(/<img[^>]+>/i);
-            if (imgMatch) {
-                imageHtmlForExtra = imgMatch[0];
-            }
-        }
-        
-        // ...existing code...
-        
-        if (settings.alwaysConfirm || settings.confirmGpt) {
-            // ...existing code...
-            await queueClip({ front, backHtml, ...settings, pageTitle, pageUrl, imageHtml: imageHtmlForExtra });
-        } else {
-            await saveToAnkiOrQueue(front, backHtml, settings, tab.id, pageTitle, pageUrl, imageHtmlForExtra);
-        }
-        
-        // ...existing code...
-    }
-
-    // Update message listener for saveFinalizedPdfCard
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-        // ...existing code...
-        
-        if (message.action === 'saveFinalizedPdfCard') {
-            const { front, backHtml, deckName, modelName } = message.cardData;
-            const settings = { deckName, modelName };
-            
-            // For finalized PDF cards, use generic title and empty URL, no image
-            saveToAnkiOrQueue(front, backHtml, settings, null, 'PDF Review', '', '')
-                .then(() => sendResponse({ success: true }))
-                .catch(error => sendResponse({ success: false, error: error.message }));
-            
-            return true; // Keep message channel open for async response
-        }
-        
-        // ...existing code...
-    });
+    // Note: All helper functions are now defined at module level for testability
 
     // Add show/hide API key toggle functionality
     if (keyToggle && keyInput) {
@@ -1285,3 +1509,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 });
+
+// Export functions for testing
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        loadSettings,
+        saveSettings,
+        updatePendingCards,
+        queueClip,
+        testOpenAI,
+        uid,
+        fetchAnki,
+        fetchDeckNames,
+        fetchModelNames,
+        refreshAnkiStatus,
+        getUniquePromptLabel,
+        toggleGPTSection,
+        toggleSection,
+        flashButtonGreen,
+        showUINotification,
+        updateUIConnectionStatus,
+        refreshPromptHistory,
+        renderPdfReviewList
+    };
+}
