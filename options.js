@@ -1276,5 +1276,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         // ...existing code...
     });
 
-    // ...existing code...
+    // Add show/hide API key toggle functionality
+    if (keyToggle && keyInput) {
+        keyToggle.addEventListener('click', () => {
+            const isHidden = keyInput.type === 'password';
+            keyInput.type = isHidden ? 'text' : 'password';
+            keyToggle.setAttribute('aria-label', isHidden ? 'Hide API Key' : 'Show API Key');
+        });
+    }
 });
