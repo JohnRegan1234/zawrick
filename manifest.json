@@ -30,17 +30,9 @@
                 "contentScript.js"
             ],
             "css": [
-                "ui/manual-tailwind.css"
+                "ui/manual.css"
             ],
             "run_at": "document_idle"
-        }
-    ],
-    "web_accessible_resources": [
-        {
-            "resources": [
-                "ui/manual-dialogue.html"
-            ],
-            "matches": ["<all_urls>"]
         }
     ],
     "commands": {

@@ -297,27 +297,16 @@ async function injectContentScriptAndWait(tabId, maxRetries = 3) {
   // Wait for script to be ready by checking if it responds
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     await new Promise(resolve => setTimeout(resolve, 100 * attempt)); // Progressive delay
-    console.log(`[injectContentScriptAndWait] Pinging content script (attempt ${attempt}/${maxRetries})`);
     const isReady = await new Promise((resolve) => {
       chrome.tabs.sendMessage(tabId, { action: "ping" }, (response) => {
         resolve(!chrome.runtime.lastError && response?.ready);
-      });
-    });
+      });    });
     if (isReady) {
-      console.log('[injectContentScriptAndWait] Content script is ready after', attempt, 'attempt(s)');
       return;
     }
   }
+  
   console.log('[injectContentScriptAndWait] Content script not ready after retries');
-  // Show user-facing notification if possible
-  if (chrome.notifications && chrome.notifications.create) {
-    chrome.notifications.create({
-      type: 'basic',
-      iconUrl: 'icon128.png',
-      title: 'Zawrick Extension Error',
-      message: 'Could not inject content script. This page may be restricted or not supported.'
-    });
-  }
   throw new Error(`Content script not ready after ${maxRetries} attempts`);
 }
 
