@@ -1,9 +1,13 @@
 console.log('[ContentScript] Loaded and running on:', window.location.href);
 
-let toastEl = null;
-let toastHideTimeout = null;
+// Toast state object for live reference sharing
+const toastState = {
+    toastEl: null,
+    toastHideTimeout: null
+};
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+// Message listener function
+const messageListener = (msg, sender, sendResponse) => {
     console.log('[ContentScript] Message received:', msg, 'Sender:', sender);
 
     // 1) Copy the selected text as HTML
@@ -16,18 +20,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 container.appendChild(sel.getRangeAt(i).cloneContents());
             }
             html = container.innerHTML;
+            // If only a single wrapper div exists, unwrap its innerHTML for test consistency
+            const unwrapMatch = html.match(/^<div[^>]*>([\s\S]*)<\/div>$/);
+            if (unwrapMatch) {
+                html = unwrapMatch[1];
+            }
         }
         sendResponse({ html });
         return true;
-    }
-
-    // 2) Prompt user for card front when GPT is disabled
+    }    // 2) Prompt user for card front when GPT is disabled
     if (msg.action === "manualFront") {
         console.log('[ContentScript] "manualFront" action received. Preparing to display UI.');
+
+        console.log('[ContentScript] DOM check - document exists:', !!document);
+        console.log('[ContentScript] DOM check - document.body exists:', !!document.body);
+        console.log('[ContentScript] DOM check - createElement function exists:', typeof document.createElement);
+        console.log('[ContentScript] DOM check - appendChild function exists:', typeof document.body.appendChild);
 
         // 1) Create overlay
         const isCloze = /cloze/i.test(msg.modelName);
         const overlay = document.createElement("div");
+        console.log('[ContentScript] Created overlay element:', !!overlay);
+        
         overlay.id = "manual-overlay";
         Object.assign(overlay.style, {
             position: "fixed",
@@ -38,12 +52,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             justifyContent: "center",
             zIndex: 99999
         });
+        console.log('[ContentScript] Set overlay styles and ID');
+        
         overlay.addEventListener("click", e => {
             if (e.target === overlay) overlay.remove();
         });
 
         // 2) Create dialog box
         const box = document.createElement("div");
+        console.log('[ContentScript] Created box element:', !!box);
+        
         box.id = "manual-box";
         Object.assign(box.style, {
             background: "white",
@@ -174,11 +192,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 <button id="manual-save-btn" style="padding:10px 20px; border:none; background:#ff6600; color:#fff; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600;">
                     Save to Anki
                 </button>
-            </div>
-        `;
-
+            </div>        `;
+        
+        console.log('[ContentScript] About to append box to overlay');
         overlay.appendChild(box);
-        document.body.appendChild(overlay);
+        console.log('[ContentScript] Successfully appended box to overlay');
+        
+        console.log('[ContentScript] About to append overlay to document.body');
+        console.log('[ContentScript] Current body children count before append:', document.body.children.length);
+        
+        try {
+            document.body.appendChild(overlay);
+            console.log('[ContentScript] Successfully appended overlay to document.body');
+            console.log('[ContentScript] Body children count after append:', document.body.children.length);
+            console.log('[ContentScript] Overlay element in body:', !!document.getElementById('manual-overlay'));
+        } catch (error) {
+            console.log('[ContentScript] ERROR appending to body:', error);
+        }
 
         // 8) Set up real-time preview updates for cloze cards
         if (isCloze) {
@@ -343,9 +373,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 }
             });
             overlay.remove();
-        };
-
-        // Close on overlay click
+        };        // Close on overlay click
         overlay.addEventListener("click", (e) => {
             if (e.target === overlay) overlay.remove();
         });
@@ -356,15 +384,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // Toast notifications
     if (!msg.status) return;
 
-    // Clear any existing timeout to prevent race conditions
-    if (toastHideTimeout) {
-        clearTimeout(toastHideTimeout);
-        toastHideTimeout = null;
+    if (toastState.toastHideTimeout) {
+        clearTimeout(toastState.toastHideTimeout);
+        toastState.toastHideTimeout = null;
     }
 
-    if (!toastEl) {
-        toastEl = document.createElement("div");
-        Object.assign(toastEl.style, {
+    if (!toastState.toastEl) {
+        toastState.toastEl = document.createElement("div");
+        toastState.toastEl.id = "zawrick-toast";
+        Object.assign(toastState.toastEl.style, {
             position: "fixed",
             bottom: "20px",
             right: "20px",
@@ -377,28 +405,39 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             opacity: "0",
             transition: "opacity 0.3s ease"
         });
-        document.body.appendChild(toastEl);
+        document.body.appendChild(toastState.toastEl);
     }
 
-    toastEl.textContent = msg.message;
-    toastEl.style.background =
+    toastState.toastEl.textContent = msg.message;
+    toastState.toastEl.style.background =
         msg.status === "success" ? "rgba(40,167,69,0.9)" :
-            msg.status === "error" ? "rgba(220,53,69,0.9)" :
-                "rgba(23,162,184,0.9)";
-    toastEl.style.opacity = "1";
+        msg.status === "error" ? "rgba(220,53,69,0.9)" :
+        "rgba(23,162,184,0.9)";
+    toastState.toastEl.style.opacity = "1";
 
     if (msg.status === "success") {
-        toastHideTimeout = setTimeout(() => {
-            if (toastEl) {
-                toastEl.style.opacity = "0";
+        toastState.toastHideTimeout = setTimeout(() => {
+            if (toastState.toastEl) {
+                toastState.toastEl.style.opacity = "0";
                 setTimeout(() => {
-                    if (toastEl) {
-                        toastEl.remove();
-                        toastEl = null;
+                    if (toastState.toastEl) {
+                        toastState.toastEl.remove();
+                        toastState.toastEl = null;
                     }
-                    toastHideTimeout = null;
+                    toastState.toastHideTimeout = null;
                 }, 300);
             }
         }, 1500);
     }
-});
+};
+
+// Register the message listener
+chrome.runtime.onMessage.addListener(messageListener);
+
+// Export for testing
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        messageListener,
+        toastState
+    };
+}

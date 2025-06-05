@@ -14,6 +14,10 @@ const {
   injectContentScriptAndWait
 } = require('../../background.js');
 
+// Add helpers at the top
+const getChrome = () => (typeof global !== 'undefined' && global.chrome ? global.chrome : chrome);
+const getCrypto = () => (typeof global !== 'undefined' && global.crypto ? global.crypto : (typeof window !== 'undefined' && window.crypto ? window.crypto : undefined));
+
 // Mock the imported functions
 jest.mock('../../ankiProvider.js', () => ({
   addToAnki: jest.fn()
@@ -241,7 +245,7 @@ describe('Background Script - Message Handling', () => {
 
       expect(result).toEqual({
         html: "",
-        error: "Tab invalid, missing URL, or discarded"
+        error: "Invalid tab for script injection"
       });
     });
 
@@ -293,7 +297,7 @@ describe('Background Script - Message Handling', () => {
       });
 
       await expect(injectContentScriptAndWait(123))
-        .rejects.toThrow('Tab invalid, missing URL, or discarded');
+        .rejects.toThrow('Invalid tab for script injection');
     });
 
     test('should throw error for restricted URLs', async () => {

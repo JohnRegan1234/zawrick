@@ -1,5 +1,10 @@
 // options.js
 
+// Add helpers at the top
+const getChrome = (injected) => injected || (typeof global !== 'undefined' && global.chrome ? global.chrome : (typeof window !== 'undefined' && window.chrome ? window.chrome : undefined));
+const getFetch = (injected) => injected || (typeof global !== 'undefined' && global.fetch ? global.fetch : (typeof window !== 'undefined' && window.fetch ? window.fetch : undefined));
+const getCrypto = (injected) => injected || (typeof global !== 'undefined' && global.crypto ? global.crypto : (typeof window !== 'undefined' && window.crypto ? window.crypto : undefined));
+
 // ── EXPORTABLE FUNCTIONS (defined outside DOMContentLoaded for testing) ──────
 // ----- Helpers -----
 function toggleGPTSection(on) {
@@ -15,8 +20,9 @@ function toggleGPTSection(on) {
 }
 
 const uid = () => {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-        return crypto.randomUUID();
+    const globalCrypto = getCrypto();
+    if (globalCrypto && typeof globalCrypto.randomUUID === 'function') {
+        return globalCrypto.randomUUID();
     }
     // Fallback: RFC4122 version 4 compliant
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -26,35 +32,35 @@ const uid = () => {
 };
 
 // ── AnkiConnect Helpers ──────────────────────────────────────────────
-async function fetchAnki(action, params = {}) {
-    try {
-        const res = await fetch('http://127.0.0.1:8765', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action, version: 6, params })
-        });
-        if (!res.ok) throw new Error(`Network error: ${res.status}`);
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        return data.result;
-    } catch (err) {
-        console.error(`AnkiConnect action "${action}" failed:`, err);
-        throw err;
-    }
+async function fetchAnki(action, params = {}, fetchInjected) {
+    const url = 'http://localhost:8765'; // Default AnkiConnect URL
+    const options = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, version: 6, params })
+    };
+    const fetchFn = getFetch(fetchInjected);
+    const res = await fetchFn(url, options);
+    if (!res.ok) throw new Error(`Network error: ${res.status}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return data.result;
 }
 
-async function fetchDeckNames() {
+async function fetchDeckNames(fetchInjected) {
     try {
-        return await fetchAnki("deckNames");
+        const result = await fetchAnki("deckNames", {}, fetchInjected);
+        return result;
     } catch (err) {
         console.warn('[Options][fetchDeckNames] Could not fetch deck names:', err);
         return [];
     }
 }
 
-async function fetchModelNames() {
+async function fetchModelNames(fetchInjected) {
     try {
-        return await fetchAnki("modelNames");
+        const result = await fetchAnki("modelNames", {}, fetchInjected);
+        return result;
     } catch (err) {
         console.warn('[Options][fetchModelNames] Could not fetch model names:', err);
         return ['Basic', 'Cloze'];
@@ -62,12 +68,14 @@ async function fetchModelNames() {
 }
 
 // ----- OpenAI test -----
-async function testOpenAI(apiKey){
+async function testOpenAI(apiKey, isValidKeyFn, fetchInjected) {
+    const isValid = isValidKeyFn || module.exports.isValidOpenAiKey || isValidOpenAiKey;
     if (!apiKey || !apiKey.trim()) return { error: 'No API key provided' };
-    if (!apiKey.startsWith('sk-')) return { error: 'Invalid API key format' };
+    if (!isValid(apiKey)) return { error: 'Invalid API key format' };
 
     try {
-        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+        const fetchFn = getFetch(fetchInjected);
+        const resp = await fetchFn('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -84,30 +92,34 @@ async function testOpenAI(apiKey){
         if (resp.status === 401) return { error: 'Invalid API key' };
         return { error: 'API error' };
     } catch {
-        return { error: 'Network error' };
+        return { error: 'API error' };
     }
 }
 
 // ----- Storage helpers -----
-const loadSettings = ()=>new Promise(resolve=>{
-    chrome.storage.local.get({
-        deckName   : 'Default',
-        modelName  : 'Basic',
-        gptEnabled : false,
-        openaiKey  : '',
-        confirmGpt : false,
-        alwaysConfirm: true,
-        prompts    : [{
-            id      : 'basic-default',
-            label   : 'Default Basic',
-            template: `You are an expert Anki flash-card creator. Given an HTML snippet ({{text}}) that will appear on the back of a card from a page titled "{{title}}" ({{url}}), write ONE clear question for the front that tests the snippet's single most important idea. Output ONLY the question.`
-        }],
-        selectedPrompt: 'basic-default'
-    },resolve);
-});
+const loadSettings = (chromeInjected) => {
+    return new Promise(resolve => {
+        getChrome(chromeInjected).storage.local.get({
+            deckName   : 'Default',
+            modelName  : 'Basic',
+            gptEnabled : false,
+            openaiKey  : '',
+            confirmGpt : false,
+            alwaysConfirm: true,
+            prompts    : [{
+                id      : 'basic-default',
+                label   : 'Default Basic',
+                template: `You are an expert Anki flash-card creator. Given an HTML snippet ({{text}}) that will appear on the back of a card from a page titled "{{title}}" ({{url}}), write ONE clear question for the front that tests the snippet's single most important idea. Output ONLY the question.`
+            }],
+            selectedPrompt: 'basic-default'
+        }, (settings) => {
+            resolve(settings);
+        });
+    });
+};
 
 const saveSettings = s=>new Promise(resolve=>{
-    chrome.storage.local.set(s,()=>{
+    getChrome().storage.local.set(s,()=>{
         if (typeof window !== 'undefined' && window.showUINotification) {
             window.showUINotification('Settings saved');
         }
@@ -116,7 +128,7 @@ const saveSettings = s=>new Promise(resolve=>{
 });
 
 const updatePendingCards = async (doc = document) => {
-    const {pendingClips=[]} = await chrome.storage.local.get({pendingClips: []});
+    const {pendingClips=[]} = await getChrome().storage.local.get({pendingClips: []});
     const pendingCount = doc.getElementById('pending-count');
     if (pendingCount) {
         pendingCount.textContent = `${pendingClips.length}`;
@@ -149,7 +161,8 @@ function toggleSection(body, toggle, initialExpandedState = null) {
     if (initialExpandedState !== null) {
         shouldBeExpanded = initialExpandedState;
     } else {
-        shouldBeExpanded = !sectionElement.classList.contains('collapsed');
+        // Toggle the current state: if collapsed, expand; if expanded, collapse
+        shouldBeExpanded = sectionElement.classList.contains('collapsed');
     }
 
     if (shouldBeExpanded) {
@@ -162,7 +175,7 @@ function toggleSection(body, toggle, initialExpandedState = null) {
 }
 
 // Status and refresh functions
-async function refreshAnkiStatus() {
+async function refreshAnkiStatus(fetchInjected, chromeInjected) {
     const statusText = document.getElementById('status-text');
     const statusHelp = document.getElementById('status-help');
     const deckSel = document.getElementById('anki-deck');
@@ -176,34 +189,30 @@ async function refreshAnkiStatus() {
 
         // Fetch all required data at once
         const [decks, models, settings] = await Promise.all([
-            fetchDeckNames(),
-            fetchModelNames(),
-            loadSettings()
+            fetchDeckNames(fetchInjected),
+            fetchModelNames(fetchInjected),
+            loadSettings(chromeInjected)
         ]);
 
+        if (!Array.isArray(decks) || decks.length === 0) throw new Error('No decks');
+        if (!Array.isArray(models) || models.length === 0) throw new Error('No models');
+
+        // Update UI
+        if (deckSel) {
+            deckSel.innerHTML = decks.map(d => `<option>${d}</option>`).join('');
+            deckSel.value = settings.deckName || decks[0];
+        }
+        if (modelSel) {
+            modelSel.innerHTML = models.map(m => `<option>${m}</option>`).join('');
+            modelSel.value = settings.modelName || models[0];
+        }
         statusText.textContent = 'Connected ✓';
         statusText.className = 'status-connected';
-        if (statusHelp) statusHelp.style.display = 'none';
-
-        // Populate the Decks dropdown
-        if (deckSel) {
-            deckSel.innerHTML = '';
-            decks.forEach(deck => deckSel.add(new Option(deck, deck)));
-            deckSel.value = settings.deckName;
-        }
-
-        // Populate the Models dropdown
-        if (modelSel) {
-            modelSel.innerHTML = '';
-            models.forEach(model => modelSel.add(new Option(model, model)));
-            modelSel.value = settings.modelName;
-        }
-
-    } catch (error) {
-        statusText.textContent = 'Connection failed ✗';
-        statusText.className = 'status-error';
-        if (statusHelp) statusHelp.style.display = 'block';
-        console.error('Anki connection error:', error);
+        if (statusHelp) statusHelp.textContent = '';
+    } catch (err) {
+        statusText.textContent = 'Anki isn\'t running or AnkiConnect isn\'t enabled. New cards will be safe in your browser until Anki starts.';
+        statusText.className = 'status-failed';
+        if (statusHelp) statusHelp.style.display = 'none'; // Hide the help box since we're showing the message in status bar
     }
 }
 
@@ -214,7 +223,7 @@ async function refreshPromptHistory() {
     if (!historyList) return;
 
     try {
-        const { promptHistory = [] } = await chrome.storage.local.get({ promptHistory: [] });
+        const { promptHistory = [] } = await getChrome().storage.local.get({ promptHistory: [] });
         
         if (historyCount) {
             historyCount.textContent = `${promptHistory.length} entries`;
@@ -269,7 +278,7 @@ async function renderPdfReviewList() {
     if (!reviewList) return;
 
     try {
-        const { pendingReviewPdfCards = [] } = await chrome.storage.local.get({ pendingReviewPdfCards: [] });
+        const { pendingReviewPdfCards = [] } = await getChrome().storage.local.get({ pendingReviewPdfCards: [] });
         
         if (reviewCount) {
             reviewCount.textContent = `${pendingReviewPdfCards.length} cards for review`;
@@ -339,7 +348,7 @@ async function renderPdfReviewList() {
 
             if (e.target.classList.contains('remove-btn')) {
                 const updatedCards = pendingReviewPdfCards.filter(c => c.id !== cardId);
-                await chrome.storage.local.set({ pendingReviewPdfCards: updatedCards });
+                await getChrome().storage.local.set({ pendingReviewPdfCards: updatedCards });
                 renderPdfReviewList();
                 if (typeof window !== 'undefined' && window.showUINotification) {
                     window.showUINotification('Card removed from review queue');
@@ -356,14 +365,14 @@ async function renderPdfReviewList() {
                 };
 
                 // Use chrome.runtime.sendMessage to communicate with background script
-                chrome.runtime.sendMessage({
+                getChrome().runtime.sendMessage({
                     action: 'saveFinalizedPdfCard',
                     cardData: finalCard
                 }, response => {
                     if (response && response.success) {
                         // Remove from review queue
                         const updatedCards = pendingReviewPdfCards.filter(c => c.id !== cardId);
-                        chrome.storage.local.set({ pendingReviewPdfCards: updatedCards });
+                        getChrome().storage.local.set({ pendingReviewPdfCards: updatedCards });
                         renderPdfReviewList();
                         if (typeof window !== 'undefined' && window.showUINotification) {
                             window.showUINotification('Card saved to Anki successfully!');
@@ -384,9 +393,14 @@ async function renderPdfReviewList() {
 }
 
 async function queueClip(clip) {
-    const { pendingClips = [] } = await chrome.storage.local.get({ pendingClips: [] });
+    const { pendingClips = [] } = await getChrome().storage.local.get({ pendingClips: [] });
     pendingClips.push(clip);
-    await chrome.storage.local.set({ pendingClips });
+    await getChrome().storage.local.set({ pendingClips });
+}
+
+// Make queueClip available for tests and browser
+if (typeof window !== 'undefined') {
+    window.queueClip = queueClip;
 }
 
 // UI helper functions (from options_ui.js functionality)
@@ -713,6 +727,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ----- UI initialisation -----
     const initializeUI = async ()=>{
+        // Initialize modal first
+        if (!window.modal && window.Modal) {
+            window.modal = new window.Modal();
+        }
+        
         const settings = await loadSettings();
         
         // Set global settings immediately - this is the single source of truth
@@ -1037,22 +1056,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ----- Section toggle functionality -----
     function toggleSection(body, toggle, initialExpandedState = null) {
-        console.log('[DEBUG][toggleSection] Called with:', { 
-            body: body?.id || body?.className, 
-            toggle: toggle?.textContent, 
-            initialExpandedState 
-        });
-
-        // body is .section-body
-        // body.parentElement is .section-body-wrapper
-        // body.parentElement.parentElement is .section (this is what we want to target)
         const sectionElement = body.parentElement?.parentElement; 
-
-        console.log('[DEBUG][toggleSection] Element hierarchy:', {
-            body: body?.tagName + (body?.id ? `#${body.id}` : '') + (body?.className ? `.${body.className}` : ''),
-            wrapper: body?.parentElement?.tagName + (body?.parentElement?.className ? `.${body.parentElement.className}` : ''),
-            section: sectionElement?.tagName + (sectionElement?.id ? `#${sectionElement.id}` : '') + (sectionElement?.className ? `.${sectionElement.className}` : '')
-        });
 
         if (!sectionElement) {
             console.error('[DEBUG][toggleSection] Could not find section element for section body', body);
@@ -1065,25 +1069,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (initialExpandedState !== null) {
             // This path is for initial setup from initializeUI
             shouldBeExpanded = initialExpandedState;
-            console.log('[DEBUG][toggleSection] Initial setup. Current classList:', Array.from(sectionElement.classList), 'Setting expanded to:', shouldBeExpanded);
         } else {
             // This path is for user clicks - toggle the current state
             shouldBeExpanded = currentlyCollapsed; // If it's collapsed, we want to expand it. If not collapsed, we want to collapse it.
-            console.log('[DEBUG][toggleSection] User click. Current classList:', Array.from(sectionElement.classList), 'Contains "collapsed":', currentlyCollapsed, 'Derived shouldBeExpanded:', shouldBeExpanded);
         }
 
         // Apply the class to the SECTION ELEMENT
         if (shouldBeExpanded) {
             sectionElement.classList.remove('collapsed');
             toggle.textContent = '▾'; // HTML's expanded icon
-            console.log('[DEBUG][toggleSection] Section expanded, icon set to ▾');
         } else {
             sectionElement.classList.add('collapsed');
             toggle.textContent = '▸'; // Collapsed icon (right-pointing small triangle)
-            console.log('[DEBUG][toggleSection] Section collapsed, icon set to ▸');
         }
-
-        console.log('[DEBUG][toggleSection] Final classList for', sectionElement.id, ':', Array.from(sectionElement.classList));
     }
 
     // ----- Status and refresh functions -----
@@ -1120,9 +1118,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
         } catch (error) {
-            statusText.textContent = 'Connection failed ✗';
+            statusText.textContent = 'Anki isn\'t running or AnkiConnect isn\'t enabled. New cards will be safe in your browser until Anki starts.';
             statusText.className = 'status-error';
-            if (statusHelp) statusHelp.style.display = 'block'; // Show error message on failure
+            if (statusHelp) statusHelp.style.display = 'none'; // Hide the help box since we're showing the message in status bar
             console.error('Anki connection error:', error);
         }
     }
@@ -1131,7 +1129,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!historyList || !historyCount) return;
 
         try {
-            const { promptHistory = [] } = await chrome.storage.local.get({ promptHistory: [] });
+            const { promptHistory = [] } = await getChrome().storage.local.get({ promptHistory: [] });
 
             historyCount.textContent = promptHistory.length;
             historyList.innerHTML = ''; // Clear previous entries
@@ -1179,7 +1177,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const reviewCount = document.getElementById('pdf-review-count');
         if (!reviewList || !reviewCount) return;
 
-        const { pendingReviewPdfCards = [] } = await chrome.storage.local.get({ pendingReviewPdfCards: [] });
+        const { pendingReviewPdfCards = [] } = await getChrome().storage.local.get({ pendingReviewPdfCards: [] });
         reviewCount.textContent = `${pendingReviewPdfCards.length} cards for review`;
         reviewList.innerHTML = '';
 
@@ -1256,7 +1254,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (e.target.classList.contains('remove-btn')) {
                 const remainingCards = pendingReviewPdfCards.filter(c => c.id !== cardId);
-                await chrome.storage.local.set({ pendingReviewPdfCards: remainingCards });
+                await getChrome().storage.local.set({ pendingReviewPdfCards: remainingCards });
                 renderPdfReviewList(); // Re-render the list
                 window.showUINotification('Card removed successfully', 'success');
             }
@@ -1267,7 +1265,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const deck = cardElement.querySelector('.deck-select').value;
                 const model = cardElement.querySelector('.model-select').value;
 
-                chrome.runtime.sendMessage({
+                getChrome().runtime.sendMessage({
                     action: 'saveFinalizedPdfCard',
                     cardData: { 
                         front: front, 
@@ -1281,7 +1279,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }, async (response) => {
                     if (response && response.success) {
                         const remainingCards = pendingReviewPdfCards.filter(c => c.id !== cardId);
-                        await chrome.storage.local.set({ pendingReviewPdfCards: remainingCards });
+                        await getChrome().storage.local.set({ pendingReviewPdfCards: remainingCards });
                         renderPdfReviewList(); // Re-render the list
                         window.showUINotification('Card saved successfully!', 'success');
                     } else {
@@ -1397,24 +1395,39 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return;
                 }
                 
-                // At this point, 'currentPrompt' is a user prompt that can be deleted.
-                if (confirm(`Are you sure you want to delete the prompt "${currentPrompt.label}"? This cannot be undone.`)) {
-                    const updatedPrompts = currentPromptsArray.filter(p => p.id !== selectedId);
-                    // Fallback to first remaining user prompt, then first system, then absolute default
-                    const newSelectedPromptId = updatedPrompts.find(p => !SYSTEM_PROMPTS.some(sp => sp.id === p.id))?.id || SYSTEM_PROMPTS[0]?.id || DEFAULT_PROFILE.id;
-
-                    // CRITICAL: Update window.currentSettings FIRST
-                    window.currentSettings.prompts = updatedPrompts;
-                    window.currentSettings.selectedPrompt = newSelectedPromptId;
-
-                    saveSettings({ prompts: updatedPrompts, selectedPrompt: newSelectedPromptId }).then(() => {
-                        if (window.renderSelect) window.renderSelect();
-                        window.showUINotification('Prompt deleted');
-                        if (window.flashButtonGreen) window.flashButtonGreen(delBtn);
-                    });
+                // Use modal instead of confirm
+                if (!ensureModal()) {
+                    // Fallback to browser confirm if modal is not available
+                    if (confirm(`Are you sure you want to delete the prompt "${currentPrompt.label}"? This cannot be undone.`)) {
+                        deletePromptAndUpdate(currentPrompt, currentPromptsArray, selectedId);
+                    }
+                    return;
                 }
+                
+                window.modal.show(
+                    'Delete Prompt',
+                    `Are you sure you want to delete the prompt "${currentPrompt.label}"? This cannot be undone.`,
+                    () => deletePromptAndUpdate(currentPrompt, currentPromptsArray, selectedId)
+                );
             }
         };
+    }
+
+    // Helper function to handle prompt deletion and UI updates
+    function deletePromptAndUpdate(currentPrompt, currentPromptsArray, selectedId) {
+        const updatedPrompts = currentPromptsArray.filter(p => p.id !== selectedId);
+        // Fallback to first remaining user prompt, then first system, then absolute default
+        const newSelectedPromptId = updatedPrompts.find(p => !SYSTEM_PROMPTS.some(sp => sp.id === p.id))?.id || SYSTEM_PROMPTS[0]?.id || DEFAULT_PROFILE.id;
+
+        // CRITICAL: Update window.currentSettings FIRST
+        window.currentSettings.prompts = updatedPrompts;
+        window.currentSettings.selectedPrompt = newSelectedPromptId;
+
+        saveSettings({ prompts: updatedPrompts, selectedPrompt: newSelectedPromptId }).then(() => {
+            if (window.renderSelect) window.renderSelect();
+            window.showUINotification('Prompt deleted');
+            if (window.flashButtonGreen) window.flashButtonGreen(delBtn);
+        });
     }
 
     // Auto-save handlers for other form elements
@@ -1463,29 +1476,75 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     }
 
+    // Helper function to ensure modal is available
+    function ensureModal() {
+        if (!window.modal || typeof window.modal.show !== 'function') {
+            // Initialize modal if not available
+            if (window.Modal) {
+                window.modal = new window.Modal();
+            } else {
+                console.error('Modal class not available. Modal.js may not be loaded.');
+                return false;
+            }
+        }
+        return true;
+    }
+
     // Clear history button handler (for prompt history)
     if (clearHistoryBtn) {
         clearHistoryBtn.onclick = () => {
-            if (confirm('Clear all prompt history? This cannot be undone.')) {
-                chrome.storage.local.set({ promptHistory: [] }, () => {
-                    if (window.refreshPromptHistory) window.refreshPromptHistory();
-                    window.showUINotification('Prompt history cleared');
-                    if (window.flashButtonGreen) window.flashButtonGreen(clearHistoryBtn);
-                });
+            if (!ensureModal()) {
+                // Fallback to browser confirm if modal is not available
+                if (confirm('Are you sure you want to clear all prompt history? This action cannot be undone.')) {
+                    getChrome().storage.local.set({ promptHistory: [] }, () => {
+                        if (window.refreshPromptHistory) window.refreshPromptHistory();
+                        window.showUINotification('Prompt history cleared');
+                        if (window.flashButtonGreen) window.flashButtonGreen(clearHistoryBtn);
+                    });
+                }
+                return;
             }
+            
+            window.modal.show(
+                'Clear Prompt History',
+                'Are you sure you want to clear all prompt history? This action cannot be undone.',
+                () => {
+                    getChrome().storage.local.set({ promptHistory: [] }, () => {
+                        if (window.refreshPromptHistory) window.refreshPromptHistory();
+                        window.showUINotification('Prompt history cleared');
+                        if (window.flashButtonGreen) window.flashButtonGreen(clearHistoryBtn);
+                    });
+                }
+            );
         };
     }
 
     // Clear PDF history button handler (for PDF review cards)
     if (clearPdfHistoryBtn) {
         clearPdfHistoryBtn.onclick = () => {
-            if (confirm('Clear all PDF review cards? This cannot be undone.')) {
-                chrome.storage.local.set({ pendingReviewPdfCards: [] }, () => {
-                    if (window.renderPdfReviewList) window.renderPdfReviewList();
-                    window.showUINotification('PDF review cards cleared');
-                    if (window.flashButtonGreen) window.flashButtonGreen(clearPdfHistoryBtn);
-                });
+            if (!ensureModal()) {
+                // Fallback to browser confirm if modal is not available
+                if (confirm('Are you sure you want to clear all PDF review cards? This action cannot be undone.')) {
+                    getChrome().storage.local.set({ pendingReviewPdfCards: [] }, () => {
+                        if (window.renderPdfReviewList) window.renderPdfReviewList();
+                        window.showUINotification('PDF review cards cleared');
+                        if (window.flashButtonGreen) window.flashButtonGreen(clearPdfHistoryBtn);
+                    });
+                }
+                return;
             }
+            
+            window.modal.show(
+                'Clear PDF Review Cards',
+                'Are you sure you want to clear all PDF review cards? This action cannot be undone.',
+                () => {
+                    getChrome().storage.local.set({ pendingReviewPdfCards: [] }, () => {
+                        if (window.renderPdfReviewList) window.renderPdfReviewList();
+                        window.showUINotification('PDF review cards cleared');
+                        if (window.flashButtonGreen) window.flashButtonGreen(clearPdfHistoryBtn);
+                    });
+                }
+            );
         };
     }
 
@@ -1498,8 +1557,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     }
 
-    // Note: All helper functions are now defined at module level for testability
-
     // Add show/hide API key toggle functionality
     if (keyToggle && keyInput) {
         keyToggle.addEventListener('click', () => {
@@ -1510,26 +1567,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
-// Export functions for testing
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {
-        loadSettings,
-        saveSettings,
-        updatePendingCards,
-        queueClip,
-        testOpenAI,
-        uid,
-        fetchAnki,
-        fetchDeckNames,
-        fetchModelNames,
-        refreshAnkiStatus,
-        getUniquePromptLabel,
-        toggleGPTSection,
-        toggleSection,
-        flashButtonGreen,
-        showUINotification,
-        updateUIConnectionStatus,
-        refreshPromptHistory,
-        renderPdfReviewList
-    };
+// Define isValidOpenAiKey as a function for ESM export
+function isValidOpenAiKey(key) {
+    // Modern OpenAI keys can be sk-proj-... or sk-... and are much longer
+    // Just check basic format: starts with 'sk-' and is reasonable length
+    const apiKeyPattern = /^sk-[A-Za-z0-9_-]{20,}$/;
+    return typeof key === "string" && apiKeyPattern.test(key.trim());
 }
+
+// Export functions for testing
+export {
+    loadSettings,
+    saveSettings,
+    updatePendingCards,
+    queueClip,
+    testOpenAI,
+    uid,
+    fetchAnki,
+    fetchDeckNames,
+    fetchModelNames,
+    refreshAnkiStatus,
+    getUniquePromptLabel,
+    toggleGPTSection,
+    toggleSection,
+    flashButtonGreen,
+    showUINotification,
+    updateUIConnectionStatus,
+    refreshPromptHistory,
+    renderPdfReviewList,
+    getCrypto,
+    getFetch,
+    isValidOpenAiKey
+};

@@ -5,6 +5,9 @@
  * Run with: npm test -- tests/options-utils.test.js
  */
 
+// Add helper at the top
+const getCrypto = () => (typeof global !== 'undefined' && global.crypto ? global.crypto : (typeof window !== 'undefined' && window.crypto ? window.crypto : undefined));
+
 describe('Options.js Utility Functions', () => {
   
   describe('getUniquePromptLabel', () => {
@@ -106,8 +109,8 @@ describe('Options.js Utility Functions', () => {
 
   describe('uid function', () => {
     const uid = () => {
-      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-        return crypto.randomUUID();
+      if (getCrypto() && getCrypto().randomUUID) {
+        return getCrypto().randomUUID();
       }
       // Fallback: RFC4122 version 4 compliant
       return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {

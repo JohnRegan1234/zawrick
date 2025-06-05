@@ -250,7 +250,7 @@ Tests use realistic mock data including:
 - **Privacy-Focused**: OpenAI API key stored locally, never transmitted to third parties.
 - **Codebase**: Written in modern JavaScript (ES2022+), modular, and easy to extend.
 - **Testing**: Comprehensive Jest test suite with 171+ tests and Chrome API mocking.
-- **Version**: Current version is 1.5 with enhanced prompt capabilities and improved error handling.
+- **Version**: Current version is 1.6 with enhanced prompt capabilities, improved PDF review, and notification system.
 
 ---
 

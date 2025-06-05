@@ -11,9 +11,11 @@
 <body>
 
     <div class="header">
-        <img src="icons/icon64.png" alt="Zawrick Icon" />
-        <h1>Zawrick</h1>
-        <span class="version">v1.5</span>
+        <div class="brand-left">
+            <img src="../icons/icon64.png" alt="Zawrick Icon" />
+            <h1>Zawrick</h1>
+        </div>
+        <span class="version">v1.6</span>
     </div>
 
     <!-- Inline notification banner -->
@@ -215,7 +217,25 @@
       <button type="button" id="reset-settings" class="footer-link">Reset settings</button>
     </div>
 
-    <script src="../options.js" defer></script>
-    <script src="../options_ui.js" defer></script>
+    <script src="../ui/modal.js"></script>
+    <script type="module" src="../options.js" defer></script>
+    <script type="module" src="../options_ui.js" defer></script>
+
+    <!-- Modal Dialog -->
+    <div id="modal" class="modal" role="dialog" aria-labelledby="modal-title" aria-modal="true" hidden>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title" class="modal-title"></h3>
+                <button class="modal-close" aria-label="Close dialog">×</button>
+            </div>
+            <div class="modal-body">
+                <p id="modal-message"></p>
+            </div>
+            <div class="modal-footer">
+                <button data-action="cancel" class="btn btn-secondary">Cancel</button>
+                <button data-action="confirm" class="btn btn-primary">Confirm</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

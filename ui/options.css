@@ -9,6 +9,7 @@ html, body {
   --fg: #1e293b;
   --muted: #64748b;
   --accent: #ff6600;
+  --accent-rgb: 255, 102, 0;
   --success: #10b981;
   --error: #ef4444;
   --warning: #f59e0b;
@@ -61,9 +62,20 @@ html {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin-block-start: var(--gap); /* Add top margin for black space */
   margin-block-end: 0; /* Remove bottom margin */
   padding-block-end: calc(var(--gap-sm) + 8px); /* Slightly increase bottom padding to fill space */
   border-block-end: 1px solid var(--border);
+  gap: var(--gap-sm);
+  border-radius: var(--radius);
+  background: var(--border-light);
+  padding: var(--gap-sm);
+  box-shadow: var(--shadow);
+}
+
+.brand-left {
+  display: flex;
+  align-items: center;
   gap: var(--gap-sm);
 }
 
@@ -76,7 +88,6 @@ html {
   font-size: 2rem;
   font-weight: 700;
   margin: 0;
-  flex: 1;
   color: var(--fg);
   letter-spacing: -1px;
 }
@@ -84,8 +95,8 @@ html {
   font-size: 1rem;
   color: var(--muted);
   font-weight: 500;
-  margin-inline-start: var(--gap-sm);
-  align-self: flex-end;
+  margin: 0;
+  align-self: center;
 }
 
 /* Notification */
@@ -124,10 +135,11 @@ html {
   align-items: center;
   gap: var(--gap-sm);
   margin-block-end: var(--gap);
-  margin-block-start: 0; /* No top margin */
-  padding: 10px 16px;
-  border-radius: var(--radius-sm);
-  background: var(--border-light);
+  margin-block-start: var(--gap);
+  padding: var(--gap-sm);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.15);
   box-shadow: var(--shadow);
   font-size: 1rem;
 }
@@ -161,6 +173,8 @@ html {
 .status-text {
   font-size: 1rem;
   color: var(--fg);
+  flex: 1; /* Allow status text to expand */
+  line-height: 1.4; /* Better line height for longer text */
 }
 .status-bar.connected .status-text { color: var(--success);}
 .status-bar.warning .status-text { color: var(--warning);}
@@ -184,10 +198,11 @@ html {
 
 /* Pending Cards */
 .pending-cards {
-  background: linear-gradient(90deg, #fdf6b2 0%, #fceabb 100%);
-  border: 1.5px solid #fde68a;
+  background: rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.15);
   border-radius: var(--radius);
   padding: var(--gap-sm) var(--gap);
+  margin-block-start: var(--gap);
   margin-block-end: var(--gap);
   display: flex;
   align-items: center;
@@ -197,14 +212,15 @@ html {
 .pending-count {
   font-size: 2rem;
   font-weight: 700;
-  color: #b45309;
+  color: var(--fg);
   margin-inline-end: var(--gap-sm);
   line-height: 1;
   /* Add/override for badge style: */
   display: inline-block;
   padding: 2px 8px;
-  background-color: #333;
-  color: #f1f5fa;
+  background-color: var(--border-light);
+  color: var(--fg);
+  border: 1px solid var(--border);
   border-radius: 4px;
   margin-left: 0;
   margin-right: 8px;
@@ -216,7 +232,7 @@ html {
 .pending-cards span,
 .pending-cards .pending-label {
   font-size: 1.05rem;
-  color: #92400e;
+  color: var(--fg);
   font-weight: 500;
 }
 
@@ -986,7 +1002,6 @@ html {
   .section-header,
   .section-body,
   .section-body-content,
-  .pending-cards,
   .help-box,
   .template-help,
   .history-entry,
@@ -1006,6 +1021,18 @@ html {
   .section-header,
   .section-header:hover {
     background: #23262f !important;
+  }
+
+  .header {
+    background: #23262f !important;
+    color: var(--fg) !important;
+    border-color: #23262f !important;
+  }
+
+  .status-bar {
+    background: #23262f !important;
+    color: var(--fg) !important;
+    border-color: #23262f !important;
   }
 
   .section-title,
@@ -1082,9 +1109,11 @@ html {
   }
 
   .help-box.error {
-    background: linear-gradient(90deg, #7f1d1d 0%, #b91c1c 100%) !important;
-    color: #fff !important;
-    border-color: #b91c1c !important;
+    background: rgba(239, 68, 68, 0.1) !important;
+    color: #fca5a5 !important;
+    border: 2px solid rgba(239, 68, 68, 0.4) !important;
+    border-radius: 8px !important;
+    text-align: center !important;
   }
 
   .system-prompt-help {
@@ -1129,14 +1158,26 @@ html {
     color: var(--fg) !important;
   }
 
-  /* --- FIX 2: Pending Cards Banner Readability --- */
-  .pending-cards,
+  /* --- FIX 2: Pending Cards Dark Mode Styling --- */
+  .pending-cards {
+    background: #23262f !important;
+    border-color: #23262f !important;
+    color: var(--fg) !important;
+  }
+  
   .pending-cards #pending-summary,
   .pending-cards .pending-count,
   .pending-cards label,
   .pending-cards span,
   .pending-cards .pending-label {
-    color: #1e293b !important;
+    color: var(--fg) !important;
+  }
+  
+  /* Make pending count badge more visible in dark mode */
+  .pending-cards .pending-count {
+    background-color: #353945 !important;
+    color: var(--fg) !important;
+    border: 1px solid #353945 !important;
   }
 
   /* --- FIX 3: History Entry Button Readability --- */
@@ -1144,7 +1185,7 @@ html {
   .history-entry .btn-secondary {
     color: var(--accent) !important;
     background: #23262f;
-    border-color: var(--accent);
+    border-color: var(--accent) !important;
   }
   .history-entry .btn-secondary:hover,
   .history-entry .btn-secondary:focus {
@@ -1457,4 +1498,108 @@ html {
   .history-text-content code {
     background-color: rgba(255,255,255,0.1) !important;
   }
+}
+
+/* Modal Dialog */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s, visibility 0.2s;
+}
+
+.modal[hidden] {
+    display: none !important;
+}
+
+.modal[aria-hidden="false"] {
+    opacity: 1;
+    visibility: visible;
+}
+
+.modal-content {
+    background: var(--bg);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+    transform: translateY(-20px);
+    transition: transform 0.2s;
+}
+
+.modal[aria-hidden="false"] .modal-content {
+    transform: translateY(0);
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.modal-title {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--fg);
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+    border-radius: var(--radius-sm);
+    transition: color 0.2s, background-color 0.2s;
+}
+
+.modal-close:hover {
+    color: var(--fg);
+    background: var(--border);
+}
+
+.modal-body {
+    padding: 20px;
+    color: var(--fg);
+}
+
+.modal-footer {
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+    .modal-content {
+        background: #23262f;
+        border: 1px solid #353945;
+    }
+    
+    .modal-header,
+    .modal-footer {
+        border-color: #353945;
+    }
+    
+    .modal-close:hover {
+        background: #353945;
+    }
 }

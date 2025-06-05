@@ -1,5 +1,7 @@
 // tests/options-storage.test.js
 
+const getChrome = () => (typeof global !== 'undefined' && global.chrome ? global.chrome : chrome);
+
 describe('Storage Functions', () => {
   let mockChrome;
 
@@ -264,7 +266,7 @@ describe('Storage Functions', () => {
       // Simulate storing prompt history
       const { promptHistory = [] } = { promptHistory: [] };
       promptHistory.unshift(historyEntry);
-      await chrome.storage.local.set({ promptHistory });
+      await getChrome().storage.local.set({ promptHistory });
       
       expect(mockChrome.storage.local.set).toHaveBeenCalled();
     });
@@ -300,7 +302,7 @@ describe('Storage Functions', () => {
       let { promptHistory = [] } = { promptHistory: existingHistory };
       promptHistory = promptHistory.slice(0, 49); // MAX_PROMPT_HISTORY - 1
       promptHistory.unshift(newEntry);
-      await chrome.storage.local.set({ promptHistory });
+      await getChrome().storage.local.set({ promptHistory });
       
       expect(mockChrome.storage.local.set).toHaveBeenCalled();
       // In real implementation, should verify that history doesn't exceed MAX_PROMPT_HISTORY
@@ -337,7 +339,7 @@ describe('Storage Functions', () => {
       // Simulate storing PDF card
       const { pendingReviewPdfCards = [] } = { pendingReviewPdfCards: [] };
       pendingReviewPdfCards.unshift(pdfCard);
-      await chrome.storage.local.set({ pendingReviewPdfCards });
+      await getChrome().storage.local.set({ pendingReviewPdfCards });
       
       expect(mockChrome.storage.local.set).toHaveBeenCalled();
     });
@@ -366,7 +368,7 @@ describe('Storage Functions', () => {
       const cardIdToRemove = 'card-2';
       const { pendingReviewPdfCards = [] } = { pendingReviewPdfCards: existingCards };
       const filteredCards = pendingReviewPdfCards.filter(card => card.id !== cardIdToRemove);
-      await chrome.storage.local.set({ pendingReviewPdfCards: filteredCards });
+      await getChrome().storage.local.set({ pendingReviewPdfCards: filteredCards });
       
       expect(mockChrome.storage.local.set).toHaveBeenCalled();
       // In real implementation, should verify that the card was removed
