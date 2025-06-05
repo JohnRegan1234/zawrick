@@ -7,272 +7,184 @@ const toastState = {
 };
 
 // Message listener function
-const messageListener = (msg, sender, sendResponse) => {
+const messageListener = async (msg, sender, sendResponse) => {
     console.log('[ContentScript] Message received:', msg, 'Sender:', sender);
+
+    // 0) Respond to ping for handshake with background script
+    if (msg.action === "ping") {
+        sendResponse({ ready: true });
+        return true;
+    }
 
     // 1) Copy the selected text as HTML
     if (msg.action === "getSelectionHtml") {
         let html = "";
-        const sel = window.getSelection();
-        if (sel?.rangeCount) {
-            const container = document.createElement("div");
-            for (let i = 0; i < sel.rangeCount; i++) {
-                container.appendChild(sel.getRangeAt(i).cloneContents());
+        let error = null;
+        try {
+            const sel = window.getSelection();
+            if (!sel) {
+                error = "window.getSelection() returned null. This may happen on special pages or iframes.";
+            } else if (!sel.rangeCount) {
+                error = "No text is selected. Please select some text before using Zawrick.";
+            } else {
+                const container = document.createElement("div");
+                for (let i = 0; i < sel.rangeCount; i++) {
+                    container.appendChild(sel.getRangeAt(i).cloneContents());
+                }
+                html = container.innerHTML;
+                // If only a single wrapper div exists, unwrap its innerHTML for test consistency
+                const unwrapMatch = html.match(/^<div[^>]*>([\s\S]*)<\/div>$/);
+                if (unwrapMatch) {
+                    html = unwrapMatch[1];
+                }
+                if (!html.trim()) {
+                    error = "Selection is empty or not extractable. Try selecting visible text on the page.";
+                }
             }
-            html = container.innerHTML;
-            // If only a single wrapper div exists, unwrap its innerHTML for test consistency
-            const unwrapMatch = html.match(/^<div[^>]*>([\s\S]*)<\/div>$/);
-            if (unwrapMatch) {
-                html = unwrapMatch[1];
-            }
+        } catch (e) {
+            error = `Exception while extracting selection: ${e.message}`;
         }
-        sendResponse({ html });
+        if (error) {
+            console.warn('[Zawrick] getSelectionHtml error:', error);
+        }
+        sendResponse({ html, error });
         return true;
     }    // 2) Prompt user for card front when GPT is disabled
     if (msg.action === "manualFront") {
         console.log('[ContentScript] "manualFront" action received. Preparing to display UI.');
-
-        console.log('[ContentScript] DOM check - document exists:', !!document);
-        console.log('[ContentScript] DOM check - document.body exists:', !!document.body);
-        console.log('[ContentScript] DOM check - createElement function exists:', typeof document.createElement);
-        console.log('[ContentScript] DOM check - appendChild function exists:', typeof document.body.appendChild);
-
-        // 1) Create overlay
         const isCloze = /cloze/i.test(msg.modelName);
-        const overlay = document.createElement("div");
-        console.log('[ContentScript] Created overlay element:', !!overlay);
-        
-        overlay.id = "manual-overlay";
-        Object.assign(overlay.style, {
-            position: "fixed",
-            inset: "0",
-            background: "rgba(0,0,0,0.4)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 99999
-        });
-        console.log('[ContentScript] Set overlay styles and ID');
-        
-        overlay.addEventListener("click", e => {
-            if (e.target === overlay) overlay.remove();
-        });
-
-        // 2) Create dialog box
-        const box = document.createElement("div");
-        console.log('[ContentScript] Created box element:', !!box);
-        
-        box.id = "manual-box";
-        Object.assign(box.style, {
-            background: "white",
-            borderRadius: "12px",
-            padding: "24px",
-            maxWidth: isCloze ? "800px" : "600px", // Wider for cloze cards
-            width: "90%",
-            maxHeight: "85vh",
-            overflow: "auto",
-            position: "relative",
-            boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
-            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-        });
-
-        // 3) Error HTML (if any)
-        let errorHtml = "";
-        if (msg.error) {
-            errorHtml = `
-            <div id="manual-error" style="background: #fee2e2; border: 1px solid #fecaca; color: #b91c1c; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
-              ⚠️ GPT generation failed.<br>
-              <code style="background: rgba(185,28,28,0.1); padding: 2px 6px; border-radius: 4px;">${msg.error}</code><br>
-              <span style="font-size:1.05em; font-weight:500; margin-top:8px; display:block;">💡 You can still create the card manually below.</span>
-            </div>
-          `;
+        let templateHtml = '';
+        try {
+            templateHtml = await fetch(chrome.runtime.getURL('ui/manual-dialogue.html')).then(r => r.text());
+        } catch (err) {
+            console.error('[Zawrick] Failed to load manual-dialogue.html:', err);
+            showUINotification('Could not load manual card dialog. Please check extension files.', 'error');
+            return;
+        }
+        const template = document.createElement('template');
+        template.innerHTML = templateHtml;
+        const overlay = template.content.cloneNode(true).querySelector('#manual-overlay');
+        if (!overlay) {
+            console.error('[Zawrick] manual-dialogue.html missing #manual-overlay');
+            showUINotification('Manual card dialog template is missing overlay.', 'error');
+            return;
+        }
+        const box = overlay.querySelector('#manual-box');
+        if (!box) {
+            console.error('[Zawrick] manual-dialogue.html missing #manual-box');
+            showUINotification('Manual card dialog template is missing box.', 'error');
+            return;
         }
 
-        // 4) Determine dialog heading based on context
+        // 2) Set up error message if any
+        const errorEl = box.querySelector('#manual-error');
+        if (msg.error) {
+            errorEl.classList.remove('hidden');
+            errorEl.querySelector('code').textContent = msg.error;
+        }
+
+        // 3) Set dialog heading
         const hasGeneratedContent = msg.frontHtml && msg.frontHtml.trim();
         const dialogHeading = isCloze 
             ? (hasGeneratedContent ? "Review Generated Cloze Card" : "Create Cloze Card")
             : (hasGeneratedContent ? "Review Generated Question" : "Create Flashcard Question");
+        box.querySelector('#manual-heading').textContent = dialogHeading;
 
-        // 5) Deck select — enabled only if msg.ankiOnline===true
+        // 4) Set up deck selection
+        const deckSelect = box.querySelector('#manual-deck');
+        const deckHelp = box.querySelector('#deck-help');
         const deckName = msg.deckName || "Default";
-        const deckDisabled = msg.ankiOnline ? "" : "disabled";
-        const deckHelp = msg.ankiOnline
-            ? ""
-            : `<span style="font-size:12px; color:#6b7280; margin-top:6px; display:block;">
-                🟠 Deck can only be changed when Anki is connected
-            </span>`;
-
-        // Use the full list if available, otherwise show just the saved deck
-        const options = (msg.deckList && msg.deckList.length)
-            ? msg.deckList
-            : [deckName];
-
-        const deckSelectHtml = `
-            <div style="margin-bottom: 16px;">
-              <label style="display:block; font-weight:500; margin-bottom:4px; color:#374151;">Deck</label>
-              <select id="manual-deck" ${deckDisabled} style="width:100%; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; background:#fff;">
-                ${options.map(d =>
+        const options = (msg.deckList && msg.deckList.length) ? msg.deckList : [deckName];
+        
+        deckSelect.innerHTML = options.map(d => 
             `<option value="${d}"${d === deckName ? " selected" : ""}>${d}</option>`
-        ).join("")}
-              </select>
-              ${deckHelp}
-            </div>
-          `;
-
-        // 6) Build the appropriate interface based on card type
-        let contentHtml = "";
+        ).join("");
         
-        if (isCloze) {
-            // Redesigned cloze interface with editable area and preview
-            const clozeContent = msg.frontHtml || msg.originalSelectionHtml || "";
-            contentHtml = `
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
-                    <!-- Editable Area -->
-                    <div>
-                        <label for="manual-back-input" style="display:block; font-weight:500; margin-bottom:8px; color:#374151;">
-                            Edit Cloze Text
-                        </label>
-                        <div style="font-size:12px; color:#6b7280; margin-bottom:8px;">
-                            Add {{c1::deletions}}, {{c2::more deletions}}, etc.
-                        </div>
-                        <textarea id="manual-back-input" 
-                                  style="width:100%; height:200px; padding:12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; font-family:monospace; resize:vertical; line-height:1.5;"
-                                  placeholder="Enter your cloze text with {{c1::deletions}}...">${clozeContent}</textarea>
-                    </div>
-                    
-                    <!-- Preview Area -->
-                    <div>
-                        <label style="display:block; font-weight:500; margin-bottom:8px; color:#374151;">
-                            Preview (Card Back)
-                        </label>
-                        <div style="font-size:12px; color:#6b7280; margin-bottom:8px;">
-                            This is how your card will appear in Anki
-                        </div>
-                        <div id="manual-back-preview" 
-                             style="width:100%; height:200px; padding:12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb; overflow-y:auto; font-size:14px; line-height:1.5;">
-                            ${msg.backHtml || clozeContent}
-                        </div>
-                    </div>
-                </div>
-            `;
-        } else {
-            // Standard interface for basic cards
-            contentHtml = `
-                <div style="margin-bottom: 20px;">
-                    <label for="manual-front-input" style="display:block; font-weight:500; margin-bottom:8px; color:#374151;">
-                        Question for the front:
-                    </label>
-                    <textarea id="manual-front-input"
-                              style="width:100%; height:80px; padding:12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; resize:vertical;"
-                              placeholder="Type your question here…">${msg.frontHtml || ""}</textarea>
-                </div>
-                
-                <div style="margin-bottom: 20px;">
-                    <label style="display:block; font-weight:500; margin-bottom:8px; color:#ff6600;">Back of the card (preview):</label>
-                    <div style="border-top: 2px solid #ff6600; padding-top: 12px;">
-                        <div style="padding:12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb; max-height:200px; overflow-y:auto;">
-                            ${msg.backHtml}
-                        </div>
-                    </div>
-                </div>
-            `;
+        if (!msg.ankiOnline) {
+            deckSelect.disabled = true;
+            deckHelp.classList.remove('hidden');
         }
 
-        // 7) Build complete dialog HTML
-        box.innerHTML = `
-            ${errorHtml}
-            <h2 style="margin:0 0 20px; font-size:20px; color:#1f2937; font-weight:600;">${dialogHeading}</h2>
-            ${deckSelectHtml}
-            ${contentHtml}
-            <div style="display:flex; gap:12px; justify-content:flex-end; margin-top:24px;">
-                <button id="manual-cancel-btn" style="padding:10px 20px; border:1px solid #d1d5db; background:#fff; color:#374151; border-radius:8px; cursor:pointer; font-size:14px; font-weight:500;">
-                    Cancel
-                </button>
-                <button id="manual-save-btn" style="padding:10px 20px; border:none; background:#ff6600; color:#fff; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600;">
-                    Save to Anki
-                </button>
-            </div>        `;
+        // 5) Set up content area based on card type
+        const basicContent = box.querySelector('#basic-card-content');
+        const clozeContent = box.querySelector('#cloze-card-content');
         
-        console.log('[ContentScript] About to append box to overlay');
-        overlay.appendChild(box);
-        console.log('[ContentScript] Successfully appended box to overlay');
-        
-        console.log('[ContentScript] About to append overlay to document.body');
-        console.log('[ContentScript] Current body children count before append:', document.body.children.length);
-        
-        try {
-            document.body.appendChild(overlay);
-            console.log('[ContentScript] Successfully appended overlay to document.body');
-            console.log('[ContentScript] Body children count after append:', document.body.children.length);
-            console.log('[ContentScript] Overlay element in body:', !!document.getElementById('manual-overlay'));
-        } catch (error) {
-            console.log('[ContentScript] ERROR appending to body:', error);
-        }
-
-        // 8) Set up real-time preview updates for cloze cards
         if (isCloze) {
-            const textArea = box.querySelector("#manual-back-input");
-            const preview = box.querySelector("#manual-back-preview");
+            clozeContent.classList.remove('hidden');
+            const backInput = clozeContent.querySelector('#manual-back-input');
+            const preview = clozeContent.querySelector('#manual-back-preview');
+            const initialClozeText = msg.frontHtml || msg.originalSelectionHtml || "";
             
-            if (textArea && preview) {
-                textArea.addEventListener("input", () => {
-                    // Update preview with current textarea content
-                    preview.innerHTML = textArea.value || "<em style='color:#9ca3af;'>Preview will appear here as you type...</em>";
-                });
-            }
+            backInput.value = initialClozeText;
+            preview.innerHTML = msg.backHtml || initialClozeText;
+            
+            // Set up real-time preview
+            backInput.addEventListener('input', () => {
+                preview.innerHTML = backInput.value || "<em class='text-gray-400'>Preview will appear here as you type...</em>";
+            });
+        } else {
+            basicContent.classList.remove('hidden');
+            const frontInput = basicContent.querySelector('#manual-front-input');
+            const preview = basicContent.querySelector('#manual-back-preview');
+            
+            frontInput.value = msg.frontHtml || "";
+            preview.innerHTML = msg.backHtml || "";
         }
 
-        // 9) Save validation and handler
-        const frontInput = box.querySelector("#manual-front-input");
-        const backInput = box.querySelector("#manual-back-input");
-        const saveBtn = box.querySelector("#manual-save-btn");
-        const cancelBtn = box.querySelector("#manual-cancel-btn");
-        
-        function toggleSave() {
-            const hasContent = isCloze ? 
-                (backInput && backInput.value.trim().length > 0) :
-                (frontInput && frontInput.value.trim().length > 0);
-            if (saveBtn) {
-                saveBtn.disabled = !hasContent;
-                saveBtn.style.opacity = hasContent ? "1" : "0.6";
-            }
-        }
-        
-        if (frontInput) frontInput.addEventListener("input", toggleSave);
-        if (backInput) backInput.addEventListener("input", toggleSave);
-        toggleSave(); // Initial check
+        // 6) Set up event handlers
+        overlay.addEventListener('click', e => {
+            if (e.target === overlay) overlay.remove();
+        });
 
-        // 10) Event handlers
+        const cancelBtn = box.querySelector('#manual-cancel-btn');
+        const saveBtn = box.querySelector('#manual-save-btn');
+        
         if (cancelBtn) {
             cancelBtn.onclick = () => overlay.remove();
         }
 
         if (saveBtn) {
+            const frontInput = box.querySelector('#manual-front-input');
+            const backInput = box.querySelector('#manual-back-input');
+            
+            function toggleSave() {
+                const hasContent = isCloze ? 
+                    (backInput && backInput.value.trim().length > 0) :
+                    (frontInput && frontInput.value.trim().length > 0);
+                saveBtn.disabled = !hasContent;
+                saveBtn.classList.toggle('opacity-60', !hasContent);
+            }
+            
+            if (frontInput) frontInput.addEventListener('input', toggleSave);
+            if (backInput) backInput.addEventListener('input', toggleSave);
+            toggleSave(); // Initial check
+
             saveBtn.onclick = () => {
                 const question = frontInput ? frontInput.value.trim() : "";
-                const clozeContent = backInput ? backInput.value.trim() : "";
+                const clozeText = backInput ? backInput.value.trim() : "";
                 
-                if (isCloze && !clozeContent) return;
+                if (isCloze && !clozeText) return;
                 if (!isCloze && !question) return;
 
-                const selectedDeck = box.querySelector("#manual-deck").value;
-                const finalBackContent = isCloze ? clozeContent : msg.backHtml;
+                const selectedDeck = deckSelect.value;
+                const finalBackContent = isCloze ? clozeText : msg.backHtml;
                 
                 chrome.runtime.sendMessage({
-                    action   : "manualSave",
-                    front    : isCloze ? clozeContent : question, // For cloze, front and back are the same
-                    backHtml : finalBackContent,
-                    deckName : selectedDeck,
+                    action: 'manualSave',
+                    front: isCloze ? clozeText : question,
+                    backHtml: finalBackContent,
+                    deckName: selectedDeck,
                     modelName: msg.modelName,
                     pageTitle: msg.pageTitle,
-                    pageUrl  : msg.pageUrl,
+                    pageUrl: msg.pageUrl,
                     imageHtml: msg.imageHtml
                 });
                 overlay.remove();
             };
         }
 
+        // 7) Add to document
+        document.body.appendChild(overlay);
         return;
     }
 
@@ -430,6 +342,45 @@ const messageListener = (msg, sender, sendResponse) => {
         }, 1500);
     }
 };
+
+// Helper for showing UI notifications from anywhere in the script
+function showUINotification(message, type = '') {
+    if (!toastState.toastEl) {
+        toastState.toastEl = document.createElement('div');
+        toastState.toastEl.id = 'zawrick-toast';
+        Object.assign(toastState.toastEl.style, {
+            position: "fixed",
+            bottom: "20px",
+            right: "20px",
+            padding: "8px 12px",
+            color: "#fff",
+            fontSize: "14px",
+            borderRadius: "4px",
+            zIndex: 9999,
+            boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
+            opacity: "0",
+            transition: "opacity 0.3s ease"
+        });
+        document.body.appendChild(toastState.toastEl);
+    }
+    toastState.toastEl.textContent = message;
+    toastState.toastEl.style.background =
+        type === "error" ? "rgba(220,53,69,0.9)" :
+        type === "success" ? "rgba(40,167,69,0.9)" :
+        "rgba(23,162,184,0.9)";
+    toastState.toastEl.style.opacity = "1";
+    setTimeout(() => {
+        if (toastState.toastEl) {
+            toastState.toastEl.style.opacity = "0";
+            setTimeout(() => {
+                if (toastState.toastEl) {
+                    toastState.toastEl.remove();
+                    toastState.toastEl = null;
+                }
+            }, 300);
+        }
+    }, 2000);
+}
 
 // Register the message listener
 chrome.runtime.onMessage.addListener(messageListener);
