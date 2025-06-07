@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "minimum_chrome_version": "103",
     "name": "Zawrick",    "description": "Generate Anki cards from selected text on your browser.",
-    "version": "1.6",
+    "version": "1.7",
     "permissions": [
         "contextMenus",
         "storage",
@@ -33,6 +33,14 @@
                 "ui/manual.css"
             ],
             "run_at": "document_idle"
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "ui/manual-dialogue.html"
+            ],
+            "matches": ["<all_urls>"]
         }
     ],
     "commands": {

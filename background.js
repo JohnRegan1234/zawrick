@@ -53,7 +53,6 @@ import { generateFrontWithRetry, generateClozeWithRetry } from './chatgptProvide
 
 // Add helpers at the top
 const getChrome = () => (typeof global !== 'undefined' && global.chrome ? global.chrome : chrome);
-const getFetch = () => (typeof global !== 'undefined' && global.fetch ? global.fetch : fetch);
 const getCrypto = () => (typeof global !== 'undefined' && global.crypto ? global.crypto : (typeof window !== 'undefined' && window.crypto ? window.crypto : undefined));
 
 // ── State ───────────────────────────────────────────────────────────────────
@@ -491,6 +490,10 @@ async function handleAction(tab, info) {
 
   const ankiOnline = await checkAnkiAvailability();
   const deckList = await fetchDeckNames();
+  
+  console.log('[Background][handleAction] Anki online:', ankiOnline);
+  console.log('[Background][handleAction] Deck list:', deckList);
+  console.log('[Background][handleAction] Settings deck name:', settings.deckName);
 
   // For cloze cards without GPT, show manual input
   if (isCloze && !settings.gptEnabled) {
@@ -579,21 +582,49 @@ async function handleAction(tab, info) {
 
 // ── Anki helpers ───────────────────────────────────────────────────────────
 async function fetchAnki(action, params = {}) {
-  const res = await getFetch()(url, options);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  const url = 'http://localhost:8765';
+  const options = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, version: 6, params })
+  };
+  try {
+    const res = await fetch(url, options);
+    if (!res.ok) throw new Error(`Network error: ${res.status}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return data.result;
+  } catch (err) {
+    console.error('[Background][fetchAnki] Error:', err);
+    throw err;
+  }
 }
 
 async function isAnkiConnectAvailable() {
-  try { const { result } = await fetchAnki("version"); return !!result; }
-  catch { return false; }
+  try {
+    const result = await fetchAnki("version");
+    return !!result;
+  } catch {
+    return false;
+  }
 }
 const checkAnkiAvailability = isAnkiConnectAvailable;
 
 async function fetchDeckNames() {
-  try { const { result } = await fetchAnki("deckNames"); return Array.isArray(result) ? result : []; }
-  catch { return []; }
+  try { 
+    console.log('[Background][fetchDeckNames] Fetching deck names from AnkiConnect');
+    const result = await fetchAnki("deckNames"); 
+    console.log('[Background][fetchDeckNames] Raw result:', result);
+    const deckList = Array.isArray(result) ? result : [];
+    console.log('[Background][fetchDeckNames] Processed deck list:', deckList);
+    return deckList;
+  }
+  catch (err) { 
+    console.error('[Background][fetchDeckNames] Error fetching deck names:', err);
+    return []; 
+  }
 }
+
 // ── Misc helpers ───────────────────────────────────────────────────────────
 
 // Validate OpenAI API key format
@@ -608,7 +639,14 @@ function stripHtml(html) {
 
 function generateBackWithSource(html, title, url, opts = {}) {
   if (opts.noSource) return html;
-  return `${html}\n\nSource: ${title} (${url})`;
+  const sourceHtml = url 
+    ? `<div class="source-info" style="margin-top: 1em; padding-top: 1em; border-top: 1px solid #eee; font-size: 0.9em; color: #666;">
+        <strong>Source:</strong> <a href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>
+       </div>`
+    : `<div class="source-info" style="margin-top: 1em; padding-top: 1em; border-top: 1px solid #eee; font-size: 0.9em; color: #666;">
+        <strong>Source:</strong> ${title}
+       </div>`;
+  return `${html}\n${sourceHtml}`;
 }
 
 // A new helper function to check for PDF URLs
@@ -948,7 +986,7 @@ async function handlePdfSelection(info, tab) {
     });
   }
 
-  // Determine if manual review is needed
+  // Determine if manual review is needed - now matches normal webpage behavior
   const needsManualReview = !settings.gptEnabled || gptFailed || settings.alwaysConfirm ||
     (isCloze && !settings.gptEnabled) || (!isCloze && !front.trim() && settings.gptEnabled);
 
@@ -991,7 +1029,7 @@ async function handlePdfSelection(info, tab) {
     return;
   }
 
-  // Auto-save
+  // Auto-save - now matches normal webpage behavior
   try {
     await saveToAnkiOrQueue(isCloze ? backHtml : front, backHtml, settings, null, pageTitle, pageUrl, imageHtmlForExtra);
     chrome.notifications.create('pdf_autosave_processed_' + Date.now(), {
@@ -1050,7 +1088,7 @@ async function generateWithOpenAI(template, text, apiKey, model = 'gpt-3.5-turbo
     })
   };
 
-  const res = await getFetch()(url, options);
+  const res = await fetch(url, options);
 
   const responseText = await res.text();
   if (!res.ok) {
@@ -1095,15 +1133,21 @@ function createHandleMessage({
         case 'manualSave':
         case 'confirmSave':
         case 'saveFinalizedPdfCard': {
-          // Extract data from either message.data or message directly
-          const data = message.data || message;
+          console.log('[handleMessage] Processing save action:', message.action);
+          // Extract data from either message.data or message.cardData
+          const data = message.cardData || message.data || message;
+          console.log('[handleMessage] Extracted data:', data);
           const { front, backHtml, deckName, modelName, pageTitle, pageUrl, imageHtml } = data;
           try {
+            if (!front || !backHtml || !deckName || !modelName) {
+              throw new Error('Missing required fields: front, backHtml, deckName, or modelName');
+            }
+            console.log('[handleMessage] Calling saveToAnkiOrQueue with:', { front, backHtml, deckName, modelName, pageTitle, pageUrl, imageHtml });
             await injectedSaveToAnkiOrQueue(front, backHtml, { deckName, modelName }, sender.tab?.id, pageTitle, pageUrl, imageHtml);
-            console.log('[handleMessage] sendResponse (success)');
+            console.log('[handleMessage] saveToAnkiOrQueue completed successfully');
             sendResponse({ success: true });
           } catch (err) {
-            console.log('[handleMessage] sendResponse (error in saveToAnkiOrQueue)', err);
+            console.error('[handleMessage] Error in saveToAnkiOrQueue:', err);
             sendResponse({ success: false, error: err.message });
           }
           break;

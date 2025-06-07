@@ -1,0 +1,42 @@
+<!-- manual-dialogue.html: Enhanced full-screen template for manual card editing dialog -->
+<div id="manual-overlay" class="manual-dialogue-overlay">
+  <div id="manual-box" class="manual-dialogue-modal">
+    <h2 id="manual-heading">✨ Manual Card Editor</h2>
+    <form id="manual-card-form">
+      <div class="form-content">
+        <div id="manual-error" class="hidden" style="color: red; margin-bottom: 1em;">
+          <strong>⚠️ Error:</strong> <code></code>
+        </div>
+        
+        <div class="form-section">
+          <label for="manual-deck">📚 Select Deck</label>
+          <select id="manual-deck" name="deck"></select>
+          <div id="deck-help" class="hidden" style="color: #b91c1c; font-size: 0.95em; margin-bottom: 1em;">
+            🚫 Deck selection is disabled (Anki not online).
+          </div>
+        </div>
+        
+        <!-- Basic card content area -->
+        <div id="basic-card-content" class="form-section hidden">
+          <label for="manual-front-input">💭 Front Content</label>
+          <textarea id="manual-front-input" name="frontInput" placeholder="Enter the question or prompt for your flashcard..."></textarea>
+          <label for="basic-back-preview">👁️ Back Preview</label>
+          <div id="basic-back-preview" style="min-height:2em; border:1px solid #eee; padding:0.5em; background:#fafafa;"></div>
+        </div>
+        
+        <!-- Cloze card content area -->
+        <div id="cloze-card-content" class="form-section hidden">
+          <label for="manual-back-input">🔍 Cloze Content</label>
+          <textarea id="manual-back-input" name="backInput" rows="3" placeholder="Enter content with {{c1::cloze deletions}}..."></textarea>
+          <label for="cloze-back-preview">👁️ Preview</label>
+          <div id="cloze-back-preview" style="min-height:2em; border:1px solid #eee; padding:0.5em; background:#fafafa;"></div>
+        </div>
+      </div>
+      
+      <div class="manual-dialogue-actions" id="manual-button-row">
+        <button type="submit" id="manual-save-btn" class="manual-button">💾 Save Card</button>
+        <button type="button" id="manual-cancel-btn" class="manual-button-secondary">❌ Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>

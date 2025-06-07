@@ -300,25 +300,36 @@ async function renderPdfReviewList() {
             cardElement.className = 'review-card';
             cardElement.dataset.cardId = card.id;
             
+            const contentInput = card.isCloze
+                ? `<textarea class="form-textarea" rows="5">${card.generatedClozeText || card.sourceText}</textarea>`
+                : `<textarea class="form-input" rows="2" placeholder="Enter question front...">${card.generatedFront}</textarea>`;
+
+            // Show image preview if the card has an image
+            const imagePreview = card.imageHtml ? `
+                <div class="form-group">
+                    <label class="form-label">Image (will be added to Extra field)</label>
+                    <div class="image-preview" style="border: 1px solid #dee2e6; padding: 8px; border-radius: 4px; background: #f8f9fa;">
+                        ${card.imageHtml}
+                    </div>
+                </div>
+            ` : '';
+
             cardElement.innerHTML = `
                 <div class="review-card-header">
-                    <h3 class="review-card-title">PDF Card Review</h3>
-                    <span class="review-card-date">${new Date(card.timestamp).toLocaleString()}</span>
+                    <span>From: <strong>${card.originalPageTitle || 'PDF Document'}</strong></span>
+                    <span>${new Date(card.timestamp).toLocaleString()}</span>
                 </div>
-                <div class="review-card-content">
-                    <div class="review-field">
-                        <label class="review-label">Source Text:</label>
-                        <div class="review-text">${card.sourceText}</div>
+                <div class="review-card-body">
+                    <div class="form-group">
+                        <label class="form-label">${card.isCloze ? 'Cloze Content' : 'Front (Question)'}</label>
+                        ${contentInput}
                     </div>
-                    <div class="review-field">
-                        <label class="review-label">Generated Front:</label>
-                        <div class="review-text">${card.generatedFront}</div>
+                    ${imagePreview}
+                    <div class="form-group">
+                        <label class="form-label">Source Text (for reference)</label>
+                        <div class="source-text-preview" style="border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; background-color: var(--bg-color); min-height: 2em;">${card.sourceText}</div>
                     </div>
-                    <div class="review-field">
-                        <label class="review-label">Generated Cloze:</label>
-                        <div class="review-text">${card.generatedClozeText}</div>
-                    </div>
-                    <div class="review-settings">
+                    <div class="form-row">
                         <div class="form-group">
                             <label class="form-label">Deck</label>
                             <select class="form-select deck-select">${deckOptions}</select>
@@ -329,7 +340,7 @@ async function renderPdfReviewList() {
                         </div>
                     </div>
                 </div>
-                <div class="review-card-footer">
+                <div class="review-card-footer" style="background-color: var(--bg-color); border-top: 1px solid var(--border-color);">
                     <button class="btn btn-secondary remove-btn">Remove</button>
                     <button class="btn btn-primary save-btn">Save to Anki</button>
                 </div>
@@ -354,32 +365,60 @@ async function renderPdfReviewList() {
                     window.showUINotification('Card removed from review queue');
                 }
             } else if (e.target.classList.contains('save-btn')) {
-                const deckSelect = cardElement.querySelector('.deck-select');
-                const modelSelect = cardElement.querySelector('.model-select');
-                
-                const finalCard = {
-                    front: cardData.isCloze ? cardData.generatedClozeText : cardData.generatedFront,
-                    back: cardData.isCloze ? cardData.generatedClozeText : cardData.sourceText,
-                    deckName: deckSelect.value,
-                    modelName: modelSelect.value
-                };
+                console.log('Save button clicked');
+                const textarea = cardElement.querySelector('textarea');
+                const front = textarea ? textarea.value : cardData.generatedFront || '';
+                const back = cardData.isCloze ? (textarea ? textarea.value : '') : cardData.sourceText;
+                const deck = cardElement.querySelector('.deck-select')?.value || cardData.originalDeckName || 'Default';
+                const model = cardElement.querySelector('.model-select')?.value || cardData.originalModelName || 'Basic';
+                const imageHtml = cardData.imageHtml || "";
+                const pageTitle = cardData.originalPageTitle || 'PDF Review';
+                const pageUrl = cardData.originalPageUrl || '';
 
-                // Use chrome.runtime.sendMessage to communicate with background script
+                // Format the source information
+                const sourceHtml = pageUrl 
+                    ? `<div class="source-info" style="margin-top: 1em; padding-top: 1em; border-top: 1px solid #eee; font-size: 0.9em; color: #666;">
+                        <strong>Source:</strong> <a href="${pageUrl}" target="_blank" rel="noopener noreferrer">${pageTitle}</a>
+                       </div>`
+                    : `<div class="source-info" style="margin-top: 1em; padding-top: 1em; border-top: 1px solid #eee; font-size: 0.9em; color: #666;">
+                        <strong>Source:</strong> ${pageTitle}
+                       </div>`;
+
+                const formattedBack = `${back}\n${sourceHtml}`;
+
+                console.log('Sending to Anki:', {
+                    front,
+                    backHtml: formattedBack,
+                    deckName: deck,
+                    modelName: model,
+                    imageHtml,
+                    pageTitle,
+                    pageUrl
+                });
+
                 getChrome().runtime.sendMessage({
                     action: 'saveFinalizedPdfCard',
-                    cardData: finalCard
-                }, response => {
+                    cardData: { 
+                        front: front, 
+                        backHtml: formattedBack, 
+                        deckName: deck, 
+                        modelName: model,
+                        imageHtml: imageHtml,
+                        pageTitle: pageTitle,
+                        pageUrl: pageUrl
+                    }
+                }, async (response) => {
+                    console.log('Received response from saveFinalizedPdfCard:', response);
                     if (response && response.success) {
-                        // Remove from review queue
-                        const updatedCards = pendingReviewPdfCards.filter(c => c.id !== cardId);
-                        getChrome().storage.local.set({ pendingReviewPdfCards: updatedCards });
+                        const remainingCards = pendingReviewPdfCards.filter(c => c.id !== cardId);
+                        await getChrome().storage.local.set({ pendingReviewPdfCards: remainingCards });
                         renderPdfReviewList();
                         if (typeof window !== 'undefined' && window.showUINotification) {
-                            window.showUINotification('Card saved to Anki successfully!');
+                            window.showUINotification('Card saved to Anki successfully!', 'success');
                         }
                     } else {
                         if (typeof window !== 'undefined' && window.showUINotification) {
-                            window.showUINotification('Failed to save card: ' + (response?.error || 'Unknown error'), 'error');
+                            window.showUINotification(`Save failed: ${response?.error || 'Unknown error'}`, 'error');
                         }
                     }
                 });
@@ -521,7 +560,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // PDF Review section
     const pdfReviewSection = document.getElementById('pdf-review-section');
     const pdfReviewToggle = pdfReviewSection?.querySelector('.section-toggle');
-    const pdfReviewBody = pdfReviewSection?.querySelector('.section-body');
+    const pdfReviewBody = pdfReviewSection?.querySelector('.section-body-wrapper');
     const clearPdfHistoryBtn = document.getElementById('clear-pdf-history');
     const refreshPdfReviewBtn = document.getElementById('refresh-pdf-review-list-btn');
 
@@ -553,12 +592,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     }
 
-    const pdfReviewHeader = pdfReviewSection?.querySelector('.section-header');
-    if (pdfReviewHeader && pdfReviewBody && pdfReviewToggle) {
-        pdfReviewHeader.onclick = () => {
-            console.log('[options.js] PDF Review HEADER clicked, calling toggleSection.');
+    if (pdfReviewToggle && pdfReviewBody) {
+        pdfReviewToggle.addEventListener('click', async () => {
+            // Toggle the section first
             toggleSection(pdfReviewBody, pdfReviewToggle);
-        };
+            // If the section is now expanded (not collapsed), refresh the list
+            const sectionElement = pdfReviewBody.closest('.section');
+            if (sectionElement && !sectionElement.classList.contains('collapsed') && window.renderPdfReviewList) {
+                await window.renderPdfReviewList();
+            }
+        });
     }
 
     // 1. give the popup a sane default
@@ -736,6 +779,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Set global settings immediately - this is the single source of truth
         window.currentSettings = settings;
+
+        // Initialize PDF review list
+        if (window.renderPdfReviewList) {
+            await window.renderPdfReviewList();
+        }
 
         // --- Fix malformed prompts: ensure every prompt has an id ---
         let needsFix = false;
@@ -944,33 +992,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Initialize section states using the newly defined toggleSection
         console.log('[DEBUG][initializeUI] Initializing section states...');
-        
+        // Collapse all sections by default
         if (ankiBody && ankiToggle) {
-            console.log('[DEBUG][initializeUI] Setting up Anki section...');
-            toggleSection(ankiBody, ankiToggle, true); // Expand Anki
-        } else {
-            console.warn('[DEBUG][initializeUI] Anki section elements not found:', { ankiBody, ankiToggle });
+            toggleSection(ankiBody, ankiToggle, false); // Collapse Anki
         }
-        
         if (gptBody && gptToggle) {
-            console.log('[DEBUG][initializeUI] Setting up GPT section...');
-            toggleSection(gptBody, gptToggle, true);   // Expand GPT
-        } else {
-            console.warn('[DEBUG][initializeUI] GPT section elements not found:', { gptBody, gptToggle });
+            toggleSection(gptBody, gptToggle, false);   // Collapse GPT
         }
-        
         if (historyBody && historyToggle) {
-            console.log('[DEBUG][initializeUI] Setting up History section...');
-            toggleSection(historyBody, historyToggle, false); // Collapse History by default
-        } else {
-            console.warn('[DEBUG][initializeUI] History section elements not found:', { historyBody, historyToggle });
+            toggleSection(historyBody, historyToggle, false); // Collapse History
         }
-        
         if (pdfReviewBody && pdfReviewToggle) {
-            console.log('[DEBUG][initializeUI] Setting up PDF Review section...');
-            toggleSection(pdfReviewBody, pdfReviewToggle, false); // Collapse PDF Review by default
-        } else {
-            console.warn('[DEBUG][initializeUI] PDF Review section elements not found:', { pdfReviewBody, pdfReviewToggle });
+            toggleSection(pdfReviewBody, pdfReviewToggle, false); // Collapse PDF Review
         }
 
         await refreshAnkiStatus();
@@ -1198,7 +1231,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const contentInput = card.isCloze
                 ? `<textarea class="form-textarea" rows="5">${card.generatedClozeText || card.sourceText}</textarea>`
-                : `<input type="text" class="form-input" value="${card.generatedFront}" placeholder="Enter question front...">`;
+                : `<textarea class="form-input" rows="2" placeholder="Enter question front...">${card.generatedFront}</textarea>`;
 
             // Show image preview if the card has an image
             const imagePreview = card.imageHtml ? `
@@ -1223,7 +1256,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ${imagePreview}
                     <div class="form-group">
                         <label class="form-label">Source Text (for reference)</label>
-                        <div class="source-text-preview">${card.sourceText}</div>
+                        <div class="source-text-preview" style="border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; background-color: var(--bg-color); min-height: 2em;">${card.sourceText}</div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
@@ -1236,7 +1269,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </div>
                 </div>
-                <div class="review-card-footer">
+                <div class="review-card-footer" style="background-color: var(--bg-color); border-top: 1px solid var(--border-color);">
                     <button class="btn btn-secondary remove-btn">Remove</button>
                     <button class="btn btn-primary save-btn">Save to Anki</button>
                 </div>
@@ -1260,23 +1293,50 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             if (e.target.classList.contains('save-btn')) {
-                const front = cardData.isCloze ? cardElement.querySelector('textarea').value : cardElement.querySelector('input').value;
-                const back = cardData.isCloze ? cardElement.querySelector('textarea').value : cardData.sourceText;
-                const deck = cardElement.querySelector('.deck-select').value;
-                const model = cardElement.querySelector('.model-select').value;
+                console.log('Save button clicked');
+                const textarea = cardElement.querySelector('textarea');
+                const front = textarea ? textarea.value : cardData.generatedFront || '';
+                const back = cardData.isCloze ? (textarea ? textarea.value : '') : cardData.sourceText;
+                const deck = cardElement.querySelector('.deck-select')?.value || cardData.originalDeckName || 'Default';
+                const model = cardElement.querySelector('.model-select')?.value || cardData.originalModelName || 'Basic';
+                const imageHtml = cardData.imageHtml || "";
+                const pageTitle = cardData.originalPageTitle || 'PDF Review';
+                const pageUrl = cardData.originalPageUrl || '';
+
+                // Format the source information
+                const sourceHtml = pageUrl 
+                    ? `<div class="source-info" style="margin-top: 1em; padding-top: 1em; border-top: 1px solid #eee; font-size: 0.9em; color: #666;">
+                        <strong>Source:</strong> <a href="${pageUrl}" target="_blank" rel="noopener noreferrer">${pageTitle}</a>
+                       </div>`
+                    : `<div class="source-info" style="margin-top: 1em; padding-top: 1em; border-top: 1px solid #eee; font-size: 0.9em; color: #666;">
+                        <strong>Source:</strong> ${pageTitle}
+                       </div>`;
+
+                const formattedBack = `${back}\n${sourceHtml}`;
+
+                console.log('Sending to Anki:', {
+                    front,
+                    backHtml: formattedBack,
+                    deckName: deck,
+                    modelName: model,
+                    imageHtml,
+                    pageTitle,
+                    pageUrl
+                });
 
                 getChrome().runtime.sendMessage({
                     action: 'saveFinalizedPdfCard',
                     cardData: { 
                         front: front, 
-                        backHtml: back, 
+                        backHtml: formattedBack, 
                         deckName: deck, 
                         modelName: model,
-                        imageHtml: cardData.imageHtml || "", // Include imageHtml in the message
-                        pageTitle: cardData.originalPageTitle || 'PDF Review',
-                        pageUrl: cardData.originalPageUrl || ''
+                        imageHtml: imageHtml,
+                        pageTitle: pageTitle,
+                        pageUrl: pageUrl
                     }
                 }, async (response) => {
+                    console.log('Received response from saveFinalizedPdfCard:', response);
                     if (response && response.success) {
                         const remainingCards = pendingReviewPdfCards.filter(c => c.id !== cardId);
                         await getChrome().storage.local.set({ pendingReviewPdfCards: remainingCards });

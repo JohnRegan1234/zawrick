@@ -48,6 +48,7 @@ body {
   box-shadow: var(--shadow-lg);
   overflow: hidden;
   /* Remove any top padding here if present */
+  font-size: 14px;
 }
 
 /* Ensure the HTML element also has rounded corners */
@@ -271,7 +272,7 @@ html {
   color: var(--fg);
 }
 .section-subtitle {
-  font-size: 0.98rem;
+  font-size: 0.9rem;
   color: var(--muted);
   margin-block-start: 2px;
 }
@@ -320,24 +321,28 @@ html {
   margin-block-end: var(--gap-sm);
 }
 .form-label {
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 500;
-  color: var(--fg);
-  margin-block-end: 2px;
+  color: var(--muted);
+  margin-block-end: 0.5rem;
 }
 .form-input,
 .form-select,
 .form-textarea {
-  padding: 8px 12px;
+  font-size: 0.9rem;
+  padding: 0.5rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-size: 1rem;
   font-family: var(--font);
   background: #fff;
   color: var(--fg);
-  transition: border-color var(--transition), box-shadow var(--transition);
-  outline: none;
-  box-shadow: none;
+  width: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  min-height: 38px;
+  line-height: 1.5;
 }
 .form-input:focus,
 .form-select:focus,
@@ -361,6 +366,7 @@ html {
 .form-textarea {
   min-height: 80px;
   resize: vertical;
+  line-height: 1.5;
 }
 .form-textarea::placeholder {
   color: var(--muted);
@@ -486,10 +492,10 @@ html {
   align-items: center;
   justify-content: center;
   font-family: var(--font);
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 500;
   border-radius: var(--radius-sm);
-  padding: 8px 18px;
+  padding: 0.5rem 1rem;
   border: none;
   cursor: pointer;
   transition: background var(--transition), color var(--transition), box-shadow var(--transition);
@@ -666,13 +672,13 @@ html {
 
 .gpt-model-pill-minimal-inline {
   display: inline-block;
-  background: #f8fafc;
-  color: #b45309;
+  background: var(--pill-bg, #f8fafc);
+  color: var(--pill-text, #b45309);
   font-weight: 600;
   font-size: 0.93rem;
   border-radius: 999px;
   padding: 2px 12px;
-  border: 1px solid #ffe0c2;
+  border: 1px solid var(--pill-border, #ffe0c2);
 }
 
 .gpt-key-link-minimal-inline {
@@ -831,7 +837,7 @@ html {
 }
 .history-controls {
   display: flex;
-  justify-content: flex-start; /* Correctly align all buttons to the left */
+  justify-content: center;
   align-items: center;
   gap: var(--gap-sm);
   margin-block-end: var(--gap-sm);
@@ -1291,8 +1297,14 @@ html {
 
   /* Footer of the review cards (for buttons) */
   .review-card-footer {
-    background-color: #2a2d35 !important;
-    border-top-color: var(--border) !important;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    padding: 1rem;
+    width: 100%;
+    background-color: #f8f9fa;
+    border-top: 1px solid #dee2e6;
   }
 
   /* Ensure buttons within review cards also adopt dark mode */
@@ -1602,4 +1614,26 @@ html {
     .modal-close:hover {
         background: #353945;
     }
+}
+
+.review-card-footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 1rem;
+  width: 100%;
+  background-color: #f8f9fa;
+  border-top: 1px solid #dee2e6;
+}
+.review-card-footer > button {
+  margin: 0 !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .gpt-model-pill-minimal-inline {
+    background: var(--pill-bg-dark, #23262f);
+    color: var(--pill-text-dark, #ffe0c2);
+    border-color: var(--pill-border-dark, #353945);
+  }
 }

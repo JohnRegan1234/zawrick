@@ -32,23 +32,38 @@ export async function addToAnki(front, backHtml, deckName = "Default", modelName
         }
     }
 
+    // --- Comprehensive Debug Logging ---
+    const requestBody = {
+        action: "addNote",
+        version: 6,
+        params: {
+            note: {
+                deckName: deckName,
+                modelName: modelName,
+                fields: fields,
+                tags: ["Zawrick"]
+            }
+        }
+    };
+    console.log("[addToAnki] Called with:", {
+        front,
+        backHtml,
+        deckName,
+        modelName,
+        extraFieldContent,
+        isCloze,
+        fields,
+        requestBody
+    });
+    // --- End Debug Logging ---
+
     const response = await fetch("http://127.0.0.1:8765", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            action: "addNote",
-            version: 6,
-            params: {
-                note: {
-                    deckName: deckName,
-                    modelName: modelName,
-                    fields   : fields,
-                    tags: ["Zawrick"]
-                }
-            }
-        })
+        body: JSON.stringify(requestBody)
     });
     const data = await response.json();
+    console.log("[addToAnki] Response from AnkiConnect:", data);
     if (data.error) throw new Error(data.error);
     return data.result;
 }

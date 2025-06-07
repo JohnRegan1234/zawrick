@@ -4,6 +4,19 @@
 
 ---
 
+## 🆕 Version 1.7 (2024-06)
+
+### Major Changes
+- **PDF Cards Auto-Save**: PDF cards now auto-save to Anki if "Always review cards before saving" is disabled and AI generation succeeds, matching the behavior for normal webpages.
+- **Consistent Source Formatting**: Source information at the bottom of cards is now consistently styled and formatted for both web and PDF cards.
+- **Dark Mode Improvements**: All UI elements, including review card footers, source text boxes, and GPT model pills, now display correctly in dark mode.
+- **PDF Review List Initialization**: The PDF review list now loads automatically when opening the options page—no manual refresh needed.
+- **UI Consistency**: Source text preview boxes and other form elements now have consistent rounded styling and spacing.
+- **Accessibility & Visual Tweaks**: Improved color contrast, pill backgrounds, and border colors for better accessibility and appearance in all themes.
+- **Bug Fixes**: Numerous bug fixes and minor improvements for stability and user experience.
+
+---
+
 ## ✨ Features
 
 - **Quick Capture**: Select text, right-click, and choose "Save selection to Anki" or use `Ctrl+Shift+K` / `⌘+Shift+K`.
