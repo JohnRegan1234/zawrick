@@ -479,13 +479,13 @@ async function handleAction(tab, info) {
         settings.gptModel
       );
       clozeText = clozed;
-      backHtml = generateBackWithSource(clozed, pageTitle, pageUrl, { noSource: true });
+      backHtml = clozed; // Don't add source info here, let saveToAnkiOrQueue handle it
     } catch (err) {
       console.warn("Cloze GPT failed:", err);
-      backHtml = generateBackWithSource(`<p>${rawText}</p>`, pageTitle, pageUrl, { noSource: true });
+      backHtml = `<p>${rawText}</p>`; // Don't add source info here, let saveToAnkiOrQueue handle it
     }
   } else {
-    backHtml = generateBackWithSource(`<p>${rawText}</p>`, pageTitle, pageUrl);
+    backHtml = `<p>${rawText}</p>`; // Don't add source info here, let saveToAnkiOrQueue handle it
   }
 
   const ankiOnline = await checkAnkiAvailability();
@@ -638,7 +638,11 @@ function stripHtml(html) {
 }
 
 function generateBackWithSource(html, title, url, opts = {}) {
-  if (opts.noSource) return html;
+  console.log('[generateBackWithSource] Input:', { html, title, url, opts });
+  if (opts.noSource) {
+    console.log('[generateBackWithSource] Skipping source due to noSource option');
+    return html;
+  }
   const sourceHtml = url 
     ? `<div class="source-info" style="margin-top: 1em; padding-top: 1em; border-top: 1px solid #eee; font-size: 0.9em; color: #666;">
         <strong>Source:</strong> <a href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>
@@ -646,7 +650,9 @@ function generateBackWithSource(html, title, url, opts = {}) {
     : `<div class="source-info" style="margin-top: 1em; padding-top: 1em; border-top: 1px solid #eee; font-size: 0.9em; color: #666;">
         <strong>Source:</strong> ${title}
        </div>`;
-  return `${html}\n${sourceHtml}`;
+  const result = `${html}\n${sourceHtml}`;
+  console.log('[generateBackWithSource] Output:', result);
+  return result;
 }
 
 // A new helper function to check for PDF URLs
@@ -663,9 +669,20 @@ function isPdfUrl(url) {
 
 // ── Misc helpers ───────────────────────────────────────────────────────────
 async function saveToAnkiOrQueue(front, backHtml, settings, tabId, pageTitle = "", pageUrl = "", imageHtml = "") {
+  console.log('[saveToAnkiOrQueue] Input:', { front, backHtml, settings, tabId, pageTitle, pageUrl, imageHtml });
   try {
     let extraContentForCloze = "";
+    let formattedBackHtml = backHtml;
+
+    // Add source information to the back content for basic cards
+    if (!/cloze/i.test(settings.modelName) && pageUrl) {
+      console.log('[saveToAnkiOrQueue] Adding source info for basic card');
+      formattedBackHtml = generateBackWithSource(backHtml, pageTitle, pageUrl);
+    }
+
+    // Handle cloze cards
     if (/cloze/i.test(settings.modelName)) {
+      console.log('[saveToAnkiOrQueue] Processing cloze card');
       // Construct extraContentForCloze with both image and source
       if (imageHtml) {
         extraContentForCloze += imageHtml;
@@ -680,7 +697,8 @@ async function saveToAnkiOrQueue(front, backHtml, settings, tabId, pageTitle = "
       }
     }
     
-    await addToAnki(front, backHtml, settings.deckName, settings.modelName, extraContentForCloze);
+    console.log('[saveToAnkiOrQueue] Final content:', { front, formattedBackHtml, extraContentForCloze });
+    await addToAnki(front, formattedBackHtml, settings.deckName, settings.modelName, extraContentForCloze);
     if (typeof tabId === 'number' && tabId >= 0) {
       notify(tabId, "success", "Card saved to Anki!");
     } else {

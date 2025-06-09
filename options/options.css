@@ -5,6 +5,7 @@ html, body {
 }
 
 :root {
+  /* Light mode variables */
   --bg: #f8fafc;
   --fg: #1e293b;
   --muted: #64748b;
@@ -23,6 +24,19 @@ html, body {
   --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+/* Dark mode variables */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #181a20;
+    --fg: #f1f5fa;
+    --muted: #a0aec0;
+    --border: rgba(255, 255, 255, 0.1);
+    --border-light: #23262f;
+    --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+  }
 }
 
 *,
@@ -47,8 +61,7 @@ body {
   border-radius: var(--radius);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
-  /* Remove any top padding here if present */
-  font-size: 14px;
+  font-size: 13px;
 }
 
 /* Ensure the HTML element also has rounded corners */
@@ -86,14 +99,14 @@ html {
   margin: 0;
 }
 .header h1 {
-  font-size: 2rem;
+  font-size: 1.75rem;
   font-weight: 700;
   margin: 0;
   color: var(--fg);
   letter-spacing: -1px;
 }
 .header .version {
-  font-size: 1rem;
+  font-size: 0.875rem;
   color: var(--muted);
   font-weight: 500;
   margin: 0;
@@ -102,32 +115,42 @@ html {
 
 /* Notification */
 .notification {
-  display: none;
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
   align-items: center;
   justify-content: center;
-  padding: 14px 20px;
-  margin-block-end: var(--gap);
-  border-radius: var(--radius);
-  font-size: 1rem;
+  padding: 8px 16px;
+  background: linear-gradient(to right, var(--accent), var(--accent-light));
+  color: white;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  font-size: 14px;
   font-weight: 500;
   opacity: 0;
-  transform: translateY(-24px);
-  pointer-events: none;
-  transition: opacity var(--transition), transform var(--transition);
-  background: linear-gradient(135deg, var(--success), #059669);
-  color: #fff;
-  box-shadow: var(--shadow);
-  min-height: 44px;
-  z-index: 9999; /* <-- ensure notification is above other content */
+  visibility: hidden;
+  transition: all 0.3s ease-out;
+  max-width: 90%;
+  white-space: nowrap;
 }
+
 .notification.error {
   background: linear-gradient(135deg, var(--error), #b91c1c);
 }
+
 .notification.show {
-  display: flex;
   opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
+  visibility: visible;
+  transform: translate(-50%, 20px);
+}
+
+.notification.hide {
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, -20px);
 }
 
 /* Status Bar */
@@ -142,7 +165,7 @@ html {
   background: rgba(0, 0, 0, 0.08);
   border: 1px solid rgba(0, 0, 0, 0.15);
   box-shadow: var(--shadow);
-  font-size: 1rem;
+  font-size: 0.875rem;
 }
 .status-indicator {
   width: 14px;
@@ -172,7 +195,7 @@ html {
   100% { box-shadow: 0 0 0 0 rgba(239,68,68,0);}
 }
 .status-text {
-  font-size: 1rem;
+  font-size: 0.875rem;
   color: var(--fg);
   flex: 1; /* Allow status text to expand */
   line-height: 1.4; /* Better line height for longer text */
@@ -180,21 +203,60 @@ html {
 .status-bar.connected .status-text { color: var(--success);}
 .status-bar.warning .status-text { color: var(--warning);}
 .status-bar.disconnected .status-text { color: var(--error);}
+
+/* Refresh button animation */
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
 .refresh-btn {
   background: none;
   border: none;
   color: var(--muted);
-  font-size: 1.2rem;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 4px;
   border-radius: var(--radius-sm);
-  transition: background var(--transition), color var(--transition);
+  transition: background-color var(--transition);
   margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  will-change: transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transform: translateZ(0);
 }
+
 .refresh-btn:hover,
 .refresh-btn:focus {
   background: var(--border);
   color: var(--accent);
+}
+
+.refresh-btn .refresh-icon {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  transition: transform 0.2s ease;
+  will-change: transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+.refresh-btn:hover .refresh-icon {
+  transform: scale(1.1);
+}
+
+.refresh-btn.spinning .refresh-icon {
+  animation: spin 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 /* Pending Cards */
@@ -267,12 +329,12 @@ html {
   background: #e8eaef;
 }
 .section-title {
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   font-weight: 600;
   color: var(--fg);
 }
 .section-subtitle {
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   color: var(--muted);
   margin-block-start: 2px;
 }
@@ -321,7 +383,7 @@ html {
   margin-block-end: var(--gap-sm);
 }
 .form-label {
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   font-weight: 500;
   color: var(--muted);
   margin-block-end: 0.5rem;
@@ -329,7 +391,7 @@ html {
 .form-input,
 .form-select,
 .form-textarea {
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -457,7 +519,7 @@ html {
 }
 
 .toggle-label {
-  font-size: 1rem;
+  font-size: 0.875rem;
   color: var(--fg);
   font-weight: 500;
   cursor: pointer;
@@ -492,7 +554,7 @@ html {
   align-items: center;
   justify-content: center;
   font-family: var(--font);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   font-weight: 500;
   border-radius: var(--radius-sm);
   padding: 0.5rem 1rem;
@@ -657,54 +719,68 @@ html {
   text-decoration: underline;
 }
 
-/* Minimal inline GPT info at bottom */
+/* GPT Info Minimal Inline */
 .gpt-info-minimal-inline {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  margin: 18px 0 0 0;
-  font-size: 0.93rem;
-  color: #b45309;
-  font-weight: 500;
-  letter-spacing: 0.01em;
+  font-size: 0.875rem;
+  color: var(--muted);
+  margin-block-start: var(--gap);
+  padding: 8px 16px;
+  background: var(--border-light);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .gpt-model-pill-minimal-inline {
-  display: inline-block;
-  background: var(--pill-bg, #f8fafc);
-  color: var(--pill-text, #b45309);
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  background: var(--border-light);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 99px;
   font-size: 0.93rem;
-  border-radius: 999px;
-  padding: 2px 12px;
-  border: 1px solid var(--pill-border, #ffe0c2);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  box-shadow: var(--shadow);
 }
 
 .gpt-key-link-minimal-inline {
-  display: inline-block;
-  color: #ff6600;
-  background: transparent;
-  border-radius: 99px;
+  display: inline-flex;
+  align-items: center;
   padding: 2px 10px;
+  background: var(--border-light);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 99px;
   font-size: 0.93rem;
   font-weight: 500;
+  letter-spacing: 0.02em;
   text-decoration: none;
-  border: none;
-  transition: color 0.18s, text-decoration 0.18s;
+  box-shadow: var(--shadow);
+  transition: all 0.2s ease;
 }
 
-.gpt-key-link-minimal-inline:hover,
-.gpt-key-link-minimal-inline:focus {
-  color: #ff9800;
-  text-decoration: underline;
+.gpt-key-link-minimal-inline:hover {
+  background: var(--border);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
 }
 
 .gpt-info-separator {
-  color: #b45309;
+  color: var(--muted);
   opacity: 0.5;
   font-size: 0.93rem;
   padding: 0 4px;
+  display: flex;
+  align-items: center;
 }
 
 /* Remove old versions */
@@ -719,7 +795,7 @@ html {
 /* Footer */
 .footer {
   display: flex;
-  justify-content: center; /* center the footer links */
+  justify-content: center;
   align-items: center;
   gap: var(--gap-sm);
   margin-block-start: var(--gap);
@@ -732,19 +808,32 @@ html {
   color: var(--muted);
   background: none;
   border: none;
-  padding: 0;
+  padding: 8px 16px;
   margin-inline-start: var(--gap-sm);
-  font-size: 1rem;
-  text-decoration: underline;
+  font-size: 0.875rem;
+  text-decoration: none;
   cursor: pointer;
-  transition: color var(--transition);
+  transition: all var(--transition);
+  border-radius: var(--radius-sm);
+  font-weight: 500;
 }
 .footer a:hover,
 .footer-link:hover,
 .footer a:focus,
 .footer-link:focus {
   color: var(--accent);
-  text-decoration: underline;
+  background: var(--border-light);
+  text-decoration: none;
+}
+
+/* Dark mode adjustments for footer links */
+@media (prefers-color-scheme: dark) {
+  .footer a:hover,
+  .footer-link:hover,
+  .footer a:focus,
+  .footer-link:focus {
+    background: #353945;
+  }
 }
 
 /* Prompt History */
@@ -774,11 +863,11 @@ html {
   background-color: #e9ecef;
 }
 .history-entry-title {
+  font-size: 0.875rem;
   font-weight: 500;
-  font-size: 14px;
 }
 .history-entry-meta {
-  font-size: 12px;
+  font-size: 0.8125rem;
   color: var(--muted);
 }
 .history-details {
@@ -837,12 +926,29 @@ html {
 }
 .history-controls {
   display: flex;
-  justify-content: center;
   align-items: center;
   gap: var(--gap-sm);
-  margin-block-end: var(--gap-sm);
-  flex-wrap: wrap;
-  min-height: 44px;
+  margin-bottom: var(--gap);
+}
+
+/* PDF Review section specific controls */
+#pdf-review-section .history-controls {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--gap);
+}
+
+#pdf-review-section .refresh-btn {
+  margin: 0;
+}
+
+#pdf-review-section .btn.btn-secondary.error {
+  justify-self: end;
+}
+
+#pdf-review-section .history-count {
+  justify-self: end;
 }
 
 /* Push count badge to the right in any .history-controls */
@@ -857,15 +963,59 @@ html {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 12px;
-  background-color: #64748b;
-  color: #f1f5fa;
+  padding: 2px 8px;
+  background-color: var(--border-light);
+  color: var(--fg);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-size: 0.9rem;
+  font-size: 0.75rem;
   font-weight: 600;
   white-space: nowrap;
   margin-left: auto;
   min-height: 28px;
+}
+
+/* Dark mode adjustments for count badges */
+@media (prefers-color-scheme: dark) {
+  .history-count,
+  #pdf-review-count {
+    background-color: var(--border-light);
+    color: var(--fg);
+    border: 1px solid var(--border);
+  }
+}
+
+/* Remove duplicate styles */
+.count-badge,
+.status-badge,
+.label-badge,
+.pending-count,
+.history-count {
+  display: inline-block;
+  padding: 2px 8px;
+  background-color: var(--border-light);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 0.75rem;
+  margin-left: 10px;
+  margin-right: 0;
+  vertical-align: middle;
+  letter-spacing: 0.02em;
+}
+
+/* Dark mode adjustments for all badges */
+@media (prefers-color-scheme: dark) {
+  .count-badge,
+  .status-badge,
+  .label-badge,
+  .pending-count,
+  .history-count {
+    background-color: var(--border-light);
+    color: var(--fg);
+    border: 1px solid var(--border);
+  }
 }
 
 /* Responsive adjustments for smaller screens */
@@ -900,615 +1050,19 @@ html {
   
   .history-count,
   #pdf-review-count {
-    background-color: #a0aec0;
-    color: #23262f;
-  }
-
-  /* Dark Mode considerations for HTML content in history */
-  .history-text-content pre {
-    background-color: var(--bg) !important; /* Use the main dark background for pre blocks */
-    border: 1px solid var(--border) !important;
-  }
-
-  .history-text-content code {
-    background-color: rgba(255,255,255,0.1) !important;
-  }
-}
-
-/* --- Count/Label Styling for Inline Elements in Flex Containers --- */
-.count-badge,
-.status-badge,
-.label-badge,
-.pending-count,
-.history-count {
-  display: inline-block;
-  padding: 2px 8px;
-  background-color: #333;
-  color: #f1f5fa;
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-  font-size: 1em;
-  margin-left: 10px;
-  margin-right: 0;
-  vertical-align: middle;
-  letter-spacing: 0.02em;
-}
-
-/* If .pending-count is already styled, ensure it inherits the new style */
-.pending-count {
-  /* ...existing .pending-count styles... */
-  /* Add/override for badge style: */
-  display: inline-block;
-  padding: 2px 8px;
-  background-color: #333;
-  color: #f1f5fa;
-  border-radius: 4px;
-  margin-left: 0;
-  margin-right: 8px;
-  font-weight: 700;
-  font-size: 1.1em;
-  line-height: 1.2;
-}
-
-/* For .history-count in controls row */
-.history-count {
-  display: inline-block;
-  padding: 2px 8px;
-  background-color: #64748b;
-  color: #f1f5fa;
-  border-radius: var(--radius-sm);
-  margin-left: 10px;
-  font-size: 0.98em;
-  font-weight: 500;
-}
-
-/* For dark mode, adjust badge backgrounds for contrast */
-@media (prefers-color-scheme: dark) {
-  .count-badge,
-  .status-badge,
-  .label-badge,
-  .pending-count,
-  .history-count {
-    background-color: #f1f5fa;
-    color: #23262f;
-  }
-  .history-count {
-    background-color: #a0aec0;
-    color: #23262f;
-  }
-  .pending-count {
-    background-color: #f1c40f;
-    color: #23262f;
-  }
-}
-
-/* --- DARK MODE SUPPORT (prefers-color-scheme: dark) --- */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #181a20;
-    --fg: #f1f5fa;
-    --muted: #a0aec0;
-    --accent: #ff9800;
-    --success: #22d3ee;
-    --error: #ef4444;
-    --warning: #fbbf24;
-    --border: rgba(255, 255, 255, 0.1);
-    --border-light: #23262f;
-    --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.5), 0 1px 2px -1px rgb(0 0 0 / 0.4);
-    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.25), 0 4px 6px -4px rgb(0 0 0 / 0.18);
-  }
-
-  body {
-    background: var(--bg);
+    background-color: var(--border-light);
     color: var(--fg);
-  }
-
-  .header,
-  .section,
-  .section-header,
-  .section-body,
-  .section-body-content,
-  .help-box,
-  .template-help,
-  .history-entry,
-  .history-details,
-  .form-input,
-  .form-select,
-  .form-textarea,
-  .custom-select-options,
-  .custom-select-option,
-  .notification,
-  .footer {
-    background-color: #23262f !important;
-    color: var(--fg) !important;
-    border-color: #23262f !important;
-  }
-
-  .section-header,
-  .section-header:hover {
-    background: #23262f !important;
-  }
-
-  .header {
-    background: #23262f !important;
-    color: var(--fg) !important;
-    border-color: #23262f !important;
-  }
-
-  .status-bar {
-    background: #23262f !important;
-    color: var(--fg) !important;
-    border-color: #23262f !important;
-  }
-
-  .section-title,
-  .section-subtitle,
-  .form-label,
-  .toggle-label,
-  .history-entry-title,
-  .history-entry-meta,
-  .history-detail-label,
-  .history-detail-content,
-  .footer-link,
-  .btn,
-  .btn-primary,
-  .btn-secondary {
-    color: var(--fg) !important;
-  }
-
-  .btn-primary {
-    background: var(--accent);
-    color: #181a20 !important;
-    border-color: var(--accent);
-  }
-  .btn-secondary {
-    background: #23262f;
-    color: var(--accent) !important;
-    border-color: var(--accent);
-  }
-  .btn.error {
-    background-color: var(--error);
-    border-color: var(--error);
-    color: #fff !important;
-  }
-
-  .form-input,
-  .form-select,
-  .form-textarea {
-    background: #23262f !important;
-    color: var(--fg) !important;
-    border-color: #353945 !important;
-  }
-  .form-input:focus,
-  .form-select:focus,
-  .form-textarea:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.18);
-  }
-
-  .input-addon {
-    background: #23262f !important;
-    color: var(--muted) !important;
-    border-color: #353945 !important;
-  }
-
-  .toggle-container {
-    background: #23262f !important;
-    border-color: #353945 !important;
-  }
-  .toggle-switch {
-    background: #353945 !important;
-    border-color: #353945 !important;
-  }
-  .toggle-checkbox:checked + .toggle-switch {
-    background: var(--accent) !important;
-    border-color: var(--accent) !important;
-  }
-
-  .notification {
-    background: linear-gradient(135deg, var(--success), #0e7490) !important;
-    color: #181a20 !important;
-  }
-  .notification.error {
-    background: linear-gradient(135deg, var(--error), #7f1d1d) !important;
-    color: #fff !important;
-  }
-
-  .help-box.error {
-    background: rgba(239, 68, 68, 0.1) !important;
-    color: #fca5a5 !important;
-    border: 2px solid rgba(239, 68, 68, 0.4) !important;
-    border-radius: 8px !important;
-    text-align: center !important;
-  }
-
-  .system-prompt-help {
-    background: linear-gradient(90deg, #23262f 0%, #2d3748 100%) !important;
-    border-inline-start: 4px solid #2196f3 !important;
-    color: #b3c7f9 !important;
-  }
-
-  .history-entry,
-  .history-details,
-  .history-detail-content,
-  .history-prompt-template,
-  .history-generated-front,
-  .history-source-text,
-  .custom-select-options,
-  .custom-select-option,
-  .custom-select-search input {
-    background: #23262f !important;
-    color: var(--fg) !important;
-    border-color: #353945 !important;
-  }
-
-  .custom-select-option.selected,
-  .custom-select-option:hover,
-  .custom-select-option:focus {
-    background-color: #353945 !important;
-    color: var(--accent) !important;
-  }
-
-  .footer,
-  .footer-link {
-    background: #181a20 !important;
-    color: var(--muted) !important;
-  }
-
-  /* --- FIX 1: History Entry Text Readability --- */
-  .history-entry .history-entry-title,
-  .history-entry .history-entry-meta,
-  .history-entry .history-detail-content,
-  .history-entry .history-detail-content span,
-  .history-entry .history-detail-content a {
-    color: var(--fg) !important;
-  }
-
-  /* --- FIX 2: Pending Cards Dark Mode Styling --- */
-  .pending-cards {
-    background: #23262f !important;
-    border-color: #23262f !important;
-    color: var(--fg) !important;
-  }
-  
-  .pending-cards #pending-summary,
-  .pending-cards .pending-count,
-  .pending-cards label,
-  .pending-cards span,
-  .pending-cards .pending-label {
-    color: var(--fg) !important;
-  }
-  
-  /* Make pending count badge more visible in dark mode */
-  .pending-cards .pending-count {
-    background-color: #353945 !important;
-    color: var(--fg) !important;
-    border: 1px solid #353945 !important;
-  }
-
-  /* --- FIX 3: History Entry Button Readability --- */
-  .history-entry .btn,
-  .history-entry .btn-secondary {
-    color: var(--accent) !important;
-    background: #23262f;
-    border-color: var(--accent) !important;
-  }
-  .history-entry .btn-secondary:hover,
-  .history-entry .btn-secondary:focus {
-    background: rgba(255, 167, 38, 0.1);
-    color: var(--accent) !important;
-  }
-
-  /* --- START: Definitive Fix for Dark Mode Readability --- */
-  /* Force the entire list item container to have a dark background */
-  .history-entry {
-    background-color: #23262f !important;
-  }
-
-  /* Force the header within the list item to be transparent, showing the dark background */
-  .history-entry .history-entry-header {
-    background-color: transparent !important;
-  }
-
-  /* Force all text elements inside the list items to be light-colored */
-  .history-entry .history-entry-title,
-  .history-entry .history-entry-meta,
-  .history-entry .history-detail-label,
-  .history-entry .history-detail-content,
-  .history-entry .history-detail-content span,
-  .history-entry .history-detail-content i {
-    color: var(--fg) !important;
-  }
-
-  /* Make links readable */
-  .history-entry .history-detail-content a {
-    color: var(--accent) !important;
-  }
-
-  /* Make buttons inside the list items readable */
-  .history-entry .btn {
-    color: var(--fg) !important;
-    background-color: #3b404d !important;
-    border-color: #4a4e59 !important;
-  }
-
-  .history-entry .btn.btn-primary {
-    background: var(--accent) !important;
-    color: #181a20 !important;
-    border-color: var(--accent) !important;
-  }
-
-  .history-entry .btn.error {
-    background-color: var(--error) !important;
-    border-color: var(--error) !important;
-    color: #fff !important;
-  }
-  /* --- END: Definitive Fix for Dark Mode Readability --- */
-
-  /* NEW: Dark mode styling for .history-item and .review-card components */
-  
-  /* General styling for the cards in both sections */
-  .history-item, .review-card {
-    background-color: var(--border-light) !important; /* Dark background for the card itself */
-    border-color: var(--border) !important; /* Darker border */
-  }
-
-  /* Headers within the cards */
-  .history-item-header, .review-card-header {
-    background-color: #2a2d35 !important; /* Slightly different dark shade for header */
-    border-bottom-color: var(--border) !important;
-    color: var(--muted) !important; /* Lighter text for muted elements */
-  }
-
-  /* Body of the cards */
-  .history-item-body, .review-card-body {
-    color: var(--fg) !important;
-  }
-
-  /* Labels within history/review items */
-  .history-label,
-  .review-card .form-label {
-    color: var(--muted) !important;
-  }
-
-  /* Text content display blocks (like source text, generated content) */
-  .history-text-content,
-  .source-text-preview {
-    background-color: var(--bg) !important; /* Even darker background for contrast */
-    color: var(--fg) !important;
-    border-color: var(--border) !important;
-  }
-
-  /* Specific to PDF Review Cards - Form Elements */
-  .review-card .form-input,
-  .review-card .form-textarea,
-  .review-card .form-select {
-    background-color: var(--bg) !important; /* Darker input background */
-    color: var(--fg) !important;
-    border-color: var(--border) !important;
-  }
-
-  .review-card .form-input:focus,
-  .review-card .form-textarea:focus,
-  .review-card .form-select:focus {
-    border-color: var(--accent) !important;
-    box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.18) !important;
-  }
-
-  /* Footer of the review cards (for buttons) */
-  .review-card-footer {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 12px;
-    padding: 1rem;
-    width: 100%;
-    background-color: #f8f9fa;
-    border-top: 1px solid #dee2e6;
-  }
-
-  /* Ensure buttons within review cards also adopt dark mode */
-  .review-card .btn-secondary {
-    background: var(--border-light) !important;
-    color: var(--accent) !important;
-    border-color: var(--accent) !important;
-  }
-
-  .review-card .btn-secondary:hover,
-  .review-card .btn-secondary:focus {
-    background: #3a3f4a !important;
-  }
-
-  .review-card .btn-primary {
-    background: var(--accent) !important;
-    color: var(--bg) !important;
-    border-color: var(--accent) !important;
-  }
-
-  /* Ensure .history-empty messages are readable in dark mode */
-  .history-empty {
-    color: var(--muted) !important;
-  }
-}
-
-/* --- Custom Select Dropdown & Search Box Formatting --- */
-.custom-select-options {
-  /* Inherit the main border-radius for a consistent rounded look */
-  border-radius: var(--radius-sm);
-}
-
-.custom-select-search {
-  /* Add padding around the search box */
-  padding: 8px;
-  border-bottom: 1px solid var(--border);
-}
-
-.custom-select-search input {
-  /* Make the search input look exactly like other form inputs */
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 1rem;
-  font-family: var(--font);
-  background: #fff;
-  color: var(--fg);
-  transition: border-color var(--transition), box-shadow var(--transition);
-  outline: none;
-  box-shadow: none;
-}
-
-.custom-select-search input:focus {
-  /* Add the standard focus style */
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(255, 102, 0, 0.15);
-}
-
-/* Restyled Info/Help Button */
-.info-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--border-light);
-  border: 1px solid var(--border);
-  border-radius: 99px; /* This creates the pill shape */
-  padding: 4px 10px;
-  margin-left: 4px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--muted);
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.info-button:hover,
-.info-button:focus {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: rgba(255, 102, 0, 0.08); /* A subtle orange background on hover */
-  outline: none;
-}
-
-/* Styling for both History and PDF Review items */
-.history-item, .review-card {
-    background-color: #ffffff;
-    border: 1px solid #dee2e6;
-    border-radius: 8px;
-    margin-bottom: 1rem;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    overflow: hidden; /* Ensures child elements respect the border radius */
-}
-
-.history-item-header, .review-card-header {
-    display: flex;
-    justify-content: space-between;
-    padding: 0.75rem 1rem;
-    background-color: #f8f9fa;
-    border-bottom: 1px solid #dee2e6;
-    font-size: 0.8rem;
-    color: #6c757d;
-}
-
-.history-item-body, .review-card-body {
-    padding: 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-}
-
-.history-content-block {
-    display: flex;
-    flex-direction: column;
-}
-
-.history-label {
-    font-size: 0.8rem;
-    color: #495057;
-    margin-bottom: 0.25rem;
-    font-weight: 600;
-}
-
-.history-text-content {
-    background-color: #f8f9fa;
-    padding: 0.5rem;
-    border-radius: 4px;
-    font-size: 0.9rem;
-    white-space: pre-wrap;
-    word-break: break-word;
-    line-height: 1.4; /* Improve readability of paragraphs if HTML has them */
-}
-
-/* Styling for links within the history content */
-.history-text-content a {
-    color: var(--accent); /* Use your accent color for links */
-    text-decoration: underline;
-    word-break: break-all; /* Ensure long URLs wrap and don't break layout */
-}
-
-.history-text-content a:hover {
-    text-decoration: none;
-}
-
-/* Styling for images within the history content */
-.history-text-content img {
-    max-width: 100%;      /* Ensure images don't overflow their container */
-    height: auto;         /* Maintain aspect ratio */
-    border-radius: 4px;   /* Optional: match other rounded corners */
-    margin-top: 0.5em;    /* Optional: add some space if an image appears */
-    display: block;       /* Avoid inline alignment issues */
-}
-
-/* Styling for tables within the history content (if they ever appear) */
-.history-text-content table {
-    max-width: 100%;
-    overflow-x: auto;     /* Allow horizontal scrolling for wide tables */
-    display: block;       /* Make it a block to enable overflow-x */
-    border-collapse: collapse;
-    margin-top: 0.5em;
-}
-
-.history-text-content th,
-.history-text-content td {
-    border: 1px solid var(--border); /* Use your border variable */
-    padding: 0.3em 0.5em;
-    text-align: left;
-}
-
-/* Styling for preformatted text or code blocks */
-.history-text-content pre {
-    white-space: pre-wrap;    /* Ensure preformatted text wraps */
-    word-break: break-all;    /* Break long lines in preformatted text */
-    background-color: var(--border-light); /* Slightly different background */
-    padding: 0.5em;
-    border-radius: 4px;
-    overflow-x: auto;         /* Allow horizontal scroll if needed */
-    max-height: 150px;        /* Limit height and allow scroll for long code blocks */
-}
-
-.history-text-content code {
-    font-family: monospace;
-    background-color: rgba(0,0,0,0.05); /* Subtle background for inline code */
-    padding: 0.1em 0.3em;
-    border-radius: 3px;
-}
-
-/* Dark mode adjustments for count badges */
-@media (prefers-color-scheme: dark) {
-  /* ...existing code... */
-  
-  .history-count,
-  #pdf-review-count {
-    background-color: #a0aec0;
-    color: #23262f;
+    border: 1px solid var(--border);
   }
 
   /* Dark Mode considerations for HTML content in history */
   .history-text-content pre {
-    background-color: var(--bg) !important; /* Use the main dark background for pre blocks */
+    background-color: var(--bg) !important;
     border: 1px solid var(--border) !important;
   }
 
   .history-text-content code {
-    background-color: rgba(255,255,255,0.1) !important;
+    background-color: var(--border-light) !important;
   }
 }
 
@@ -1564,7 +1118,7 @@ html {
 
 .modal-title {
     margin: 0;
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     font-weight: 600;
     color: var(--fg);
 }
@@ -1602,17 +1156,93 @@ html {
 /* Dark mode adjustments */
 @media (prefers-color-scheme: dark) {
     .modal-content {
-        background: #23262f;
-        border: 1px solid #353945;
+        background: var(--bg);
+        border: 1px solid var(--border);
     }
     
     .modal-header,
     .modal-footer {
-        border-color: #353945;
+        border-color: var(--border);
     }
     
     .modal-close:hover {
-        background: #353945;
+        background: var(--border);
+        color: var(--fg);
+    }
+
+    .count-badge,
+    .status-badge,
+    .label-badge,
+    .pending-count,
+    .history-count {
+        background-color: var(--border-light);
+        color: var(--fg);
+        border: 1px solid var(--border);
+    }
+
+    .history-count,
+    #pdf-review-count {
+        background-color: var(--border-light);
+        color: var(--fg);
+        border: 1px solid var(--border);
+    }
+
+    .history-text-content pre {
+        background-color: var(--bg) !important;
+        border: 1px solid var(--border) !important;
+    }
+
+    .history-text-content code {
+        background-color: var(--border-light) !important;
+    }
+
+    .section {
+        background: var(--bg);
+        border: 1px solid var(--border);
+    }
+
+    .section-header {
+        background: var(--border-light);
+        border-bottom: 1px solid var(--border);
+    }
+
+    .section-header:hover {
+        background: var(--border);
+    }
+
+    .form-input,
+    .form-select,
+    .form-textarea {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        color: var(--fg);
+    }
+
+    .form-input:focus,
+    .form-select:focus,
+    .form-textarea:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.2);
+    }
+
+    .btn {
+        background: var(--border-light);
+        color: var(--fg);
+        border: 1px solid var(--border);
+    }
+
+    .btn:hover {
+        background: var(--border);
+    }
+
+    .btn-primary {
+        background: var(--accent);
+        color: white;
+        border: none;
+    }
+
+    .btn-primary:hover {
+        background: #e65c00;
     }
 }
 
@@ -1635,5 +1265,163 @@ html {
     background: var(--pill-bg-dark, #23262f);
     color: var(--pill-text-dark, #ffe0c2);
     border-color: var(--pill-border-dark, #353945);
+  }
+
+  .gpt-key-link-minimal-inline {
+    background: var(--pill-bg-dark, #23262f);
+    color: var(--pill-text-dark, #ffe0c2);
+    border-color: var(--pill-border-dark, #353945);
+  }
+
+  .gpt-key-link-minimal-inline:hover {
+    background: var(--pill-bg-dark-hover, #2c303a);
+    color: var(--pill-text-dark, #ffe0c2);
+    border-color: var(--pill-border-dark-hover, #404552);
+  }
+}
+
+/* Help button styles */
+.help-btn {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 0;
+    cursor: pointer;
+    border-radius: var(--radius);
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 0 0 4px;
+    width: 28px;
+    height: 28px;
+    position: relative;
+    overflow: hidden;
+}
+
+.help-icon,
+.close-icon {
+    fill: currentColor;
+    transition: transform 0.2s ease;
+    width: 20px;
+    height: 20px;
+}
+
+.help-btn:hover {
+    background: var(--hover);
+    color: var(--fg);
+    border-color: var(--border-hover);
+    transform: translateY(-1px);
+}
+
+.help-btn:hover .help-icon,
+.help-btn:hover .close-icon {
+    transform: scale(1.1);
+}
+
+.help-btn:active {
+    transform: translateY(0);
+    background: var(--active);
+}
+
+.help-btn:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* Dark mode adjustments for help button */
+@media (prefers-color-scheme: dark) {
+    .help-btn {
+        background: var(--bg);
+        border-color: var(--border);
+        color: var(--muted);
+    }
+    
+    .help-btn:hover {
+        background: var(--hover);
+        border-color: var(--border-hover);
+        color: var(--fg);
+    }
+
+    .help-btn:active {
+        background: var(--active);
+    }
+}
+
+/* Help text animation */
+.help-text {
+    transition: all 0.3s ease;
+    overflow: hidden;
+    margin-top: var(--gap-sm);
+}
+
+.help-text[style*="display: none"] {
+    opacity: 0;
+    max-height: 0;
+    margin: 0;
+}
+
+.help-text:not([style*="display: none"]) {
+    opacity: 1;
+    max-height: 200px;
+}
+
+/* PDF Review Section Layout */
+.pdf-review-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: var(--gap-sm);
+  margin-bottom: var(--gap);
+  background: var(--border-light);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.pdf-review-controls .refresh-btn {
+  margin: 0;
+}
+
+.pdf-review-controls .help-btn {
+  margin: 0;
+}
+
+.pdf-review-controls .btn-secondary {
+  margin: 0;
+}
+
+.pdf-review-counter {
+  display: flex;
+  justify-content: center;
+  margin: 20px 0;
+}
+
+.pdf-review-counter .count-badge {
+  background: var(--border-light);
+  color: var(--fg);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: var(--shadow);
+}
+
+.pdf-review-status {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.875rem;
+  margin-top: 15px;
+}
+
+@media (max-width: 600px) {
+  .pdf-review-controls {
+    flex-wrap: wrap;
+    gap: var(--gap-sm);
+  }
+  
+  .pdf-review-controls > * {
+    flex: 1;
+    min-width: 120px;
   }
 }

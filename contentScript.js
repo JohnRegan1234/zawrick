@@ -38,7 +38,30 @@ const messageListener = async (msg, sender, sendResponse) => {
         // 1) Create overlay and box from template
         const isCloze = /cloze/i.test(msg.modelName);
         const template = document.createElement('template');
-        template.innerHTML = await fetch(chrome.runtime.getURL('ui/manual-dialogue.html')).then(r => r.text());
+        
+        try {
+            const response = await fetch(chrome.runtime.getURL('options/manual-dialogue.html'));
+            if (!response.ok) {
+                throw new Error(`Failed to fetch template: ${response.status} ${response.statusText}`);
+            }
+            template.innerHTML = await response.text();
+        } catch (error) {
+            console.error('[ContentScript] Error fetching manual dialogue template:', error);
+            // Create a fallback minimal template
+            template.innerHTML = `
+                <div id="manual-overlay" class="manual-dialogue-overlay" style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 99999;">
+                    <div id="manual-box" class="manual-dialogue-modal" style="background: white; padding: 20px; border-radius: 8px; max-width: 500px; width: 90%;">
+                        <h2 id="manual-heading">Manual Card Editor</h2>
+                        <div id="manual-error" class="hidden" style="color: red; margin-bottom: 1em;"><strong>Error:</strong> <code></code></div>
+                        <div><label for="manual-deck">Select Deck</label><select id="manual-deck"></select><div id="deck-help" class="hidden" style="color: #b91c1c;">Deck selection disabled (Anki not online).</div></div>
+                        <div id="basic-card-content" class="hidden"><label for="manual-front-input">Front Content</label><textarea id="manual-front-input" rows="3" style="width: 100%; margin-bottom: 10px;"></textarea><div id="basic-back-preview" style="border: 1px solid #ccc; padding: 10px; min-height: 100px;"></div></div>
+                        <div id="cloze-card-content" class="hidden"><label for="manual-back-input">Cloze Text</label><textarea id="manual-back-input" rows="5" style="width: 100%; margin-bottom: 10px;"></textarea><div id="cloze-back-preview" style="border: 1px solid #ccc; padding: 10px; min-height: 100px;"></div></div>
+                        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;"><button id="manual-cancel-btn" type="button" style="padding: 8px 16px; border: 1px solid #ccc; background: white; border-radius: 4px;">Cancel</button><button id="manual-save-btn" type="button" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px;">Save</button></div>
+                    </div>
+                </div>
+            `;
+        }
+        
         const overlay = template.content.cloneNode(true).querySelector('#manual-overlay');
         const box = overlay.querySelector('#manual-box');
 

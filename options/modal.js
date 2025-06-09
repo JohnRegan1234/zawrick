@@ -77,17 +77,9 @@ window.Modal = Modal;
 // Initialize modal
 function initializeModal() {
     try {
-        // Wait for DOM to be ready
-        if (document.readyState === 'loading') {
-            return new Promise((resolve) => {
-                document.addEventListener('DOMContentLoaded', () => {
-                    const modalInstance = new Modal();
-                    resolve(modalInstance);
-                });
-            });
-        } else {
-            return new Modal();
-        }
+        const modalInstance = new Modal();
+        if (!modalInstance.modal) return null;
+        return modalInstance;
     } catch (error) {
         console.error('Failed to initialize modal:', error);
         return null;
@@ -98,9 +90,9 @@ function initializeModal() {
 if (typeof document !== 'undefined') {
     // Browser environment
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', async () => {
+        document.addEventListener('DOMContentLoaded', () => {
             if (!window.modal) {
-                window.modal = await initializeModal();
+                window.modal = initializeModal();
             }
         });
     } else {

@@ -13,7 +13,7 @@ export async function addToAnki(front, backHtml, deckName = "Default", modelName
         // For basic cards, both fields are required by Anki
         fields = { 
             Front: front || "", 
-            Back: backHtml || "" 
+            Back: backHtml || "" // backHtml should already include source information from saveToAnkiOrQueue
         };
     }
 

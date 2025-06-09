@@ -21,7 +21,7 @@ describe('Storage Functions', () => {
     jest.clearAllMocks();
     
     // Clear module cache to ensure fresh imports
-    delete require.cache[require.resolve('../../options.js')];
+    delete require.cache[require.resolve('../../options/index.js')];
   });
 
   describe('loadSettings', () => {
@@ -32,7 +32,7 @@ describe('Storage Functions', () => {
       });
 
       // Import the function - assuming it's available globally or through require
-      const { loadSettings } = require('../../options.js');
+      const { loadSettings } = require('../../options/index.js');
       
       const settings = await loadSettings();
       
@@ -58,7 +58,7 @@ describe('Storage Functions', () => {
         callback(existingSettings);
       });
 
-      const { loadSettings } = require('../../options.js');
+      const { loadSettings } = require('../../options/index.js');
       const settings = await loadSettings();
       
       expect(settings.deckName).toBe('Medical');
@@ -73,7 +73,7 @@ describe('Storage Functions', () => {
         throw new Error('Storage unavailable');
       });
 
-      const { loadSettings } = require('../../options.js');
+      const { loadSettings } = require('../../options/index.js');
       
       await expect(loadSettings()).rejects.toThrow('Storage unavailable');
     });
@@ -85,7 +85,7 @@ describe('Storage Functions', () => {
         callback();
       });
 
-      const { saveSettings } = require('../../options.js');
+      const { saveSettings } = require('../../options/index.js');
       const newSettings = { deckName: 'History', gptEnabled: true };
       
       await saveSettings(newSettings);
@@ -101,7 +101,7 @@ describe('Storage Functions', () => {
         throw new Error('Save failed');
       });
 
-      const { saveSettings } = require('../../options.js');
+      const { saveSettings } = require('../../options/index.js');
       
       await expect(saveSettings({ deckName: 'Test' })).rejects.toThrow('Save failed');
     });
@@ -130,7 +130,7 @@ describe('Storage Functions', () => {
       });
 
       // Import and call the actual function
-      const { updatePendingCards } = require('../../options.js');
+      const { updatePendingCards } = require('../../options/index.js');
       const result = await updatePendingCards();
       
       expect(result).toBe(true);
@@ -162,7 +162,7 @@ describe('Storage Functions', () => {
       });
 
       // Import and call the actual function
-      const { updatePendingCards } = require('../../options.js');
+      const { updatePendingCards } = require('../../options/index.js');
       const result = await updatePendingCards();
       
       expect(result).toBe(true);
@@ -192,7 +192,7 @@ describe('Storage Functions', () => {
         return Promise.resolve();
       });
 
-      const { queueClip } = require('../../options.js');
+      const { queueClip } = require('../../options/index.js');
       const clip = {
         front: 'Test question',
         backHtml: '<p>Test answer</p>',
@@ -227,7 +227,7 @@ describe('Storage Functions', () => {
         return Promise.resolve();
       });
 
-      const { queueClip } = require('../../options.js');
+      const { queueClip } = require('../../options/index.js');
       const newClip = { front: 'New question' };
 
       await queueClip(newClip);

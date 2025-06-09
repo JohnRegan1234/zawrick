@@ -27,6 +27,9 @@ global.chrome = {
           pendingReviewPdfCards: []
         };
         
+        // Clear any previous error
+        global.chrome.runtime.lastError = undefined;
+        
         // Simulate async callback behavior
         setTimeout(() => {
           if (typeof callback === 'function') {
@@ -51,6 +54,9 @@ global.chrome = {
         return Promise.resolve(mockData);
       }),
       set: jest.fn((data, callback) => {
+        // Clear any previous error
+        global.chrome.runtime.lastError = undefined;
+        
         setTimeout(() => {
           if (typeof callback === 'function') {
             callback();
@@ -82,7 +88,10 @@ global.chrome = {
         callback({ os: 'mac' });
       }
     }),
-    lastError: null
+    getURL: jest.fn((path) => {
+      return `chrome-extension://test-id/${path}`;
+    }),
+    lastError: undefined
   },
   tabs: {
     query: jest.fn().mockResolvedValue([{ id: 1, url: 'https://example.com' }]),

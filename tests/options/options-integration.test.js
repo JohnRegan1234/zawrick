@@ -1,19 +1,12 @@
 // tests/options/options-integration.test.js
 
 require('../../ui/modal.js');
-import { 
-  saveSettings, 
-  loadSettings, 
-  fetchModelNames,
-  refreshPromptHistory,
-  renderPdfReviewList,
-  updatePendingCards,
-  getUniquePromptLabel,
-  toggleGPTSection,
-  flashButtonGreen,
-  showUINotification,
-  updateUIConnectionStatus
-} from '../../options.js';
+import { saveSettings, loadSettings } from '../../options/core/storage.js';
+import { fetchModelNames } from '../../options/services/anki-service.js';
+import { refreshPromptHistory, renderPdfReviewList } from '../../options/core/history-helpers.js';
+import { updatePendingCards } from '../../options/services/card-service.js';
+import { getUniquePromptLabel } from '../../options/core/utils.js';
+import { toggleGPTSection, flashButtonGreen, showUINotification, updateUIConnectionStatus } from '../../options/core/ui-helpers.js';
 
 jest.setTimeout(5000);
 
@@ -188,8 +181,8 @@ describe('Options Integration Tests', () => {
     // Initialize modal
     window.modal = new Modal();
     
-    // Load options.js
-    await require('../../options.js');
+    // Load options core functionality
+    await require('../../options/index.js');
   });
 
   beforeEach(() => {
@@ -271,7 +264,7 @@ describe('Options Integration Tests', () => {
         json: async () => ({ result: ['Default', 'Learning'], error: null })
       });
       jest.resetModules();
-      const optionsReloaded = require('../../options.js');
+      const optionsReloaded = require('../../options/index.js');
       const result = await optionsReloaded.fetchAnki('deckNames');
       expect(result).toEqual(['Default', 'Learning']);
     });
@@ -279,7 +272,7 @@ describe('Options Integration Tests', () => {
     test('should handle network errors', async () => {
       global.fetch = jest.fn().mockRejectedValue(new Error('Network down'));
       jest.resetModules();
-      const optionsReloaded = require('../../options.js');
+      const optionsReloaded = require('../../options/index.js');
       await expect(optionsReloaded.fetchAnki('deckNames')).rejects.toThrow('Network down');
     });
 
@@ -290,7 +283,7 @@ describe('Options Integration Tests', () => {
         json: async () => ({ error: 'Anki error', result: null })
       });
       jest.resetModules();
-      const optionsReloaded = require('../../options.js');
+      const optionsReloaded = require('../../options/index.js');
       await expect(optionsReloaded.fetchAnki('deckNames')).rejects.toThrow('Anki error');
     });
 
@@ -301,7 +294,7 @@ describe('Options Integration Tests', () => {
         json: async () => ({})
       });
       jest.resetModules();
-      const optionsReloaded = require('../../options.js');
+      const optionsReloaded = require('../../options/index.js');
       await expect(optionsReloaded.fetchAnki('deckNames')).rejects.toThrow('Network error: 500');
     });
   });
@@ -327,7 +320,7 @@ describe('Options Integration Tests', () => {
         json: async () => ({ result: ['Default', 'Learning'], error: null })
       });
       jest.resetModules();
-      const optionsReloaded = require('../../options.js');
+      const optionsReloaded = require('../../options/index.js');
       const result = await optionsReloaded.fetchDeckNames();
       expect(result).toEqual(['Default', 'Learning']);
     });
@@ -335,7 +328,7 @@ describe('Options Integration Tests', () => {
     test('should return empty array on error', async () => {
       global.fetch = jest.fn().mockRejectedValue(new Error('Network down'));
       jest.resetModules();
-      const optionsReloaded = require('../../options.js');
+      const optionsReloaded = require('../../options/index.js');
       const result = await optionsReloaded.fetchDeckNames();
       expect(result).toEqual([]);
     });
@@ -384,7 +377,7 @@ describe('Options Integration Tests', () => {
       global.fetch = mockFetch;
       let optionsReloaded;
       jest.isolateModules(() => {
-        optionsReloaded = require('../../options.js');
+        optionsReloaded = require('../../options/index.js');
       });
       // Use a valid API key string and inject a mock validator and fetch
       const result = await optionsReloaded.testOpenAI('sk-123456789012345678901234', () => true, mockFetch);
@@ -401,7 +394,7 @@ describe('Options Integration Tests', () => {
       });
       let result;
       jest.isolateModules(() => {
-        const optionsReloaded = require('../../options.js');
+        const optionsReloaded = require('../../options/index.js');
         result = optionsReloaded.testOpenAI('sk-123456789012345678901234');
       });
       result = await result;
@@ -412,7 +405,7 @@ describe('Options Integration Tests', () => {
       global.fetch = jest.fn().mockRejectedValue(new Error('Network down'));
       let result;
       jest.isolateModules(() => {
-        const optionsReloaded = require('../../options.js');
+        const optionsReloaded = require('../../options/index.js');
         result = optionsReloaded.testOpenAI('sk-123456789012345678901234');
       });
       result = await result;
@@ -488,7 +481,7 @@ describe('Options Integration Tests', () => {
       global.chrome = mockChrome;
       let optionsReloaded;
       jest.isolateModules(() => {
-        optionsReloaded = require('../../options.js');
+        optionsReloaded = require('../../options/index.js');
       });
       await optionsReloaded.refreshAnkiStatus(mockFetch, mockChrome);
       const statusText = document.getElementById('status-text');
@@ -509,7 +502,7 @@ describe('Options Integration Tests', () => {
       global.chrome = mockChrome;
       let optionsReloaded;
       jest.isolateModules(() => {
-        optionsReloaded = require('../../options.js');
+        optionsReloaded = require('../../options/index.js');
       });
       await optionsReloaded.refreshAnkiStatus(mockFetch, mockChrome);
       const statusText = document.getElementById('status-text');
@@ -521,7 +514,7 @@ describe('Options Integration Tests', () => {
       document.getElementById('status-text').remove();
       let optionsReloaded;
       jest.isolateModules(() => {
-        optionsReloaded = require('../../options.js');
+        optionsReloaded = require('../../options/index.js');
       });
       await expect(optionsReloaded.refreshAnkiStatus()).resolves.toBeUndefined();
     });
@@ -712,7 +705,7 @@ describe('Options Integration Tests', () => {
       global.crypto = { randomUUID: jest.fn(() => mockUUID) };
       let result;
       jest.isolateModules(() => {
-        const optionsReloaded = require('../../options.js');
+        const optionsReloaded = require('../../options/index.js');
         result = optionsReloaded.uid();
       });
       expect(result).toBe(mockUUID);
@@ -723,7 +716,7 @@ describe('Options Integration Tests', () => {
       delete global.crypto;
       let result;
       jest.isolateModules(() => {
-        const optionsReloaded = require('../../options.js');
+        const optionsReloaded = require('../../options/index.js');
         result = optionsReloaded.uid();
       });
       // Check format: 8-4-4-4-12 characters separated by hyphens
@@ -735,7 +728,7 @@ describe('Options Integration Tests', () => {
       delete global.crypto;
       let id1, id2;
       jest.isolateModules(() => {
-        const optionsReloaded = require('../../options.js');
+        const optionsReloaded = require('../../options/index.js');
         id1 = optionsReloaded.uid();
         id2 = optionsReloaded.uid();
       });

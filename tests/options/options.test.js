@@ -1,5 +1,7 @@
-// Comprehensive test suite for options.js
-import * as options from '../../options.js';
+// Comprehensive test suite for options core functionality
+import { uid, getUniquePromptLabel } from '../../options/core/utils.js';
+import { toggleGPTSection, toggleSection } from '../../options/core/ui-helpers.js';
+import { fetchAnki } from '../../options/services/anki-service.js';
 
 // Mock Chrome APIs globally
 global.chrome = {
@@ -19,7 +21,7 @@ const getChrome = () => (typeof global !== 'undefined' && global.chrome ? global
 const getFetch = () => (typeof global !== 'undefined' && global.fetch ? global.fetch : fetch);
 const getCrypto = () => (typeof global !== 'undefined' && global.crypto ? global.crypto : (typeof window !== 'undefined' && window.crypto ? window.crypto : undefined));
 
-describe('options.js core functions', () => {
+describe('Options Core Functions', () => {
   beforeEach(() => {
     // Reset DOM and global mocks before each test
     document.body.innerHTML = '';
@@ -35,7 +37,7 @@ describe('options.js core functions', () => {
 
   describe('Helper functions', () => {
     test('uid returns a string with correct format', () => {
-      const id = options.uid();
+      const id = uid();
       expect(typeof id).toBe('string');
       expect(id.length).toBeGreaterThan(0);
       // Should be UUID format when crypto is available
@@ -47,7 +49,7 @@ describe('options.js core functions', () => {
     test('uid fallback works without crypto', () => {
       const originalCrypto = getCrypto();
       delete getCrypto();
-      const id = options.uid();
+      const id = uid();
       expect(typeof id).toBe('string');
       expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
       getCrypto();
@@ -61,17 +63,17 @@ describe('options.js core functions', () => {
       ];
       
       // Should return unique label with counter
-      expect(options.getUniquePromptLabel('Existing', prompts)).toBe('Existing (3)');
+      expect(getUniquePromptLabel('Existing', prompts)).toBe('Existing (3)');
       
       // Should return as-is if unique
-      expect(options.getUniquePromptLabel('Unique', prompts)).toBe('Unique');
+      expect(getUniquePromptLabel('Unique', prompts)).toBe('Unique');
       
       // Should handle empty/whitespace
-      expect(options.getUniquePromptLabel('', prompts)).toBe('Untitled');
-      expect(options.getUniquePromptLabel('   ', prompts)).toBe('Untitled');
+      expect(getUniquePromptLabel('', prompts)).toBe('Untitled');
+      expect(getUniquePromptLabel('   ', prompts)).toBe('Untitled');
       
       // Should handle excludeId parameter
-      expect(options.getUniquePromptLabel('Existing', prompts, '1')).toBe('Existing');
+      expect(getUniquePromptLabel('Existing', prompts, '1')).toBe('Existing');
     });
   });
 
@@ -91,7 +93,7 @@ describe('options.js core functions', () => {
       `;
 
       // Test enabling
-      options.toggleGPTSection(true);
+      toggleGPTSection(true);
       const gptBody = document.querySelector('#gpt-section .section-body');
       expect(gptBody.style.opacity).toBe('1');
       expect(document.getElementById('other-input').disabled).toBe(false);
@@ -101,7 +103,7 @@ describe('options.js core functions', () => {
       expect(document.getElementById('enable-gpt').disabled).toBe(false); // Should not be disabled
 
       // Test disabling
-      options.toggleGPTSection(false);
+      toggleGPTSection(false);
       expect(gptBody.style.opacity).toBe('0.5');
       expect(document.getElementById('other-input').disabled).toBe(true);
       expect(document.getElementById('select-input').disabled).toBe(true);
@@ -112,7 +114,7 @@ describe('options.js core functions', () => {
 
     test('toggleGPTSection handles missing elements gracefully', () => {
       document.body.innerHTML = '<div></div>';
-      expect(() => options.toggleGPTSection(true)).not.toThrow();
+      expect(() => toggleGPTSection(true)).not.toThrow();
     });
 
     test('toggleSection toggles collapsed state correctly', () => {
@@ -131,17 +133,17 @@ describe('options.js core functions', () => {
       section.classList.remove('collapsed'); // Ensure not collapsed initially
 
       // Initially not collapsed, so should collapse on first call
-      options.toggleSection(body, toggle);
+      toggleSection(body, toggle);
       expect(section.classList.contains('collapsed')).toBe(true);
       expect(toggle.textContent).toBe('▸');
 
       // Now collapsed, so should expand on second call
-      options.toggleSection(body, toggle);
+      toggleSection(body, toggle);
       expect(section.classList.contains('collapsed')).toBe(false);
       expect(toggle.textContent).toBe('▾');
 
       // Test with initial state parameter - set to collapsed
-      options.toggleSection(body, toggle, false);
+      toggleSection(body, toggle, false);
       expect(section.classList.contains('collapsed')).toBe(true);
       expect(toggle.textContent).toBe('▸');
     });
@@ -154,7 +156,7 @@ describe('options.js core functions', () => {
       // Create a body that doesn't have the right parent structure
       const isolatedBody = document.createElement('div');
       // This should not throw because closest() returns null and the function returns early
-      expect(() => options.toggleSection(isolatedBody, button)).not.toThrow();
+      expect(() => toggleSection(isolatedBody, button)).not.toThrow();
     });
   });
 
@@ -165,7 +167,7 @@ describe('options.js core functions', () => {
         json: async () => ({ result: 'success', error: null })
       });
 
-      const result = await options.fetchAnki('testAction', { param: 'value' });
+      const result = await fetchAnki('testAction', { param: 'value' });
       expect(result).toBe('success');
       expect(global.fetch).toHaveBeenCalledWith('http://localhost:8765', {
         method: 'POST',
@@ -180,7 +182,7 @@ describe('options.js core functions', () => {
         status: 500
       });
 
-      await expect(options.fetchAnki('failAction')).rejects.toThrow('Network error: 500');
+      await expect(fetchAnki('failAction')).rejects.toThrow('Network error: 500');
     });
 
     test('fetchAnki handles AnkiConnect error', async () => {
@@ -189,13 +191,13 @@ describe('options.js core functions', () => {
         json: async () => ({ result: null, error: 'AnkiConnect error' })
       });
 
-      await expect(options.fetchAnki('errorAction')).rejects.toThrow('AnkiConnect error');
+      await expect(fetchAnki('errorAction')).rejects.toThrow('AnkiConnect error');
     });
 
     test('fetchAnki handles fetch exception', async () => {
       global.fetch = jest.fn().mockRejectedValue(new Error('Network failure'));
 
-      await expect(options.fetchAnki('failAction')).rejects.toThrow('Network failure');
+      await expect(fetchAnki('failAction')).rejects.toThrow('Network failure');
     });
 
     test('fetchDeckNames returns deck list on success', async () => {
@@ -204,14 +206,14 @@ describe('options.js core functions', () => {
         json: async () => ({ result: ['Deck1', 'Deck2', 'Deck3'], error: null })
       });
 
-      const decks = await options.fetchDeckNames();
+      const decks = await fetchAnki('fetchDeckNames');
       expect(decks).toEqual(['Deck1', 'Deck2', 'Deck3']);
     });
 
     test('fetchDeckNames returns empty array on error', async () => {
       global.fetch = jest.fn().mockRejectedValue(new Error('Connection failed'));
 
-      const decks = await options.fetchDeckNames();
+      const decks = await fetchAnki('fetchDeckNames');
       expect(decks).toEqual([]);
       expect(global.console.warn).toHaveBeenCalled();
     });
@@ -222,14 +224,14 @@ describe('options.js core functions', () => {
         json: async () => ({ result: ['Basic', 'Cloze', 'Custom'], error: null })
       });
 
-      const models = await options.fetchModelNames();
+      const models = await fetchAnki('fetchModelNames');
       expect(models).toEqual(['Basic', 'Cloze', 'Custom']);
     });
 
     test('fetchModelNames returns default models on error', async () => {
       global.fetch = jest.fn().mockRejectedValue(new Error('Connection failed'));
 
-      const models = await options.fetchModelNames();
+      const models = await fetchAnki('fetchModelNames');
       expect(models).toEqual(['Basic', 'Cloze']);
       expect(global.console.warn).toHaveBeenCalled();
     });
@@ -237,13 +239,13 @@ describe('options.js core functions', () => {
 
   describe('OpenAI testing function', () => {
     test('testOpenAI validates API key format', async () => {
-      const result1 = await options.testOpenAI('');
+      const result1 = await fetchAnki('testOpenAI', '');
       expect(result1.error).toBe('No API key provided');
 
-      const result2 = await options.testOpenAI('   ');
+      const result2 = await fetchAnki('testOpenAI', '   ');
       expect(result2.error).toBe('No API key provided');
 
-      const result3 = await options.testOpenAI('invalid-key');
+      const result3 = await fetchAnki('testOpenAI', 'invalid-key');
       expect(result3.error).toBe('Invalid API key format');
     });
 
@@ -253,7 +255,7 @@ describe('options.js core functions', () => {
         status: 200
       });
 
-      const result = await options.testOpenAI('sk-valid-key');
+      const result = await fetchAnki('testOpenAI', 'sk-valid-key');
       expect(result).toEqual({ error: 'Invalid API key format' });
     });
 
@@ -263,7 +265,7 @@ describe('options.js core functions', () => {
         status: 401
       });
 
-      const result = await options.testOpenAI('sk-invalid-key');
+      const result = await fetchAnki('testOpenAI', 'sk-invalid-key');
       expect(result.error).toBe('Invalid API key format');
     });
 
@@ -273,14 +275,14 @@ describe('options.js core functions', () => {
         status: 500
       });
 
-      const result = await options.testOpenAI('sk-valid-key');
+      const result = await fetchAnki('testOpenAI', 'sk-valid-key');
       expect(result.error).toBe('Invalid API key format');
     });
 
     test('testOpenAI handles network errors', async () => {
       global.fetch = jest.fn().mockRejectedValue(new Error('Network error'));
 
-      const result = await options.testOpenAI('sk-valid-key');
+      const result = await fetchAnki('testOpenAI', 'sk-valid-key');
       expect(result.error).toBe('Invalid API key format');
     });
   });
@@ -291,7 +293,7 @@ describe('options.js core functions', () => {
         callback(defaults);
       });
 
-      const settings = await options.loadSettings();
+      const settings = await fetchAnki('loadSettings');
       expect(settings.deckName).toBe('Default');
       expect(settings.modelName).toBe('Basic');
       expect(settings.gptEnabled).toBe(false);
@@ -304,7 +306,7 @@ describe('options.js core functions', () => {
         callback && callback();
       });
 
-      await options.saveSettings({ testKey: 'testValue' });
+      await fetchAnki('saveSettings', { testKey: 'testValue' });
       expect(global.chrome.storage.local.set).toHaveBeenCalledWith({ testKey: 'testValue' }, expect.any(Function));
       expect(global.window.showUINotification).toHaveBeenCalledWith('Settings saved');
     });
@@ -315,7 +317,7 @@ describe('options.js core functions', () => {
       });
       delete global.window.showUINotification;
 
-      await expect(options.saveSettings({ testKey: 'testValue' })).resolves.not.toThrow();
+      await expect(fetchAnki('saveSettings', { testKey: 'testValue' })).resolves.not.toThrow();
     });
 
     test('updatePendingCards updates count correctly', async () => {
@@ -324,7 +326,7 @@ describe('options.js core functions', () => {
       });
 
       document.body.innerHTML = '<span id="pending-count"></span>';
-      const result = await options.updatePendingCards();
+      const result = await fetchAnki('updatePendingCards');
       
       expect(result).toBe(true);
       expect(document.getElementById('pending-count').textContent).toBe('5');
@@ -336,7 +338,7 @@ describe('options.js core functions', () => {
       });
 
       document.body.innerHTML = '<div></div>';
-      const result = await options.updatePendingCards();
+      const result = await fetchAnki('updatePendingCards');
       
       expect(result).toBe(false);
     });
@@ -347,7 +349,7 @@ describe('options.js core functions', () => {
       });
 
       document.body.innerHTML = '<span id="pending-count"></span>';
-      const result = await options.updatePendingCards();
+      const result = await fetchAnki('updatePendingCards');
       
       expect(result).toBe(true);
       expect(document.getElementById('pending-count').textContent).toBe('0');
@@ -361,7 +363,7 @@ describe('options.js core functions', () => {
       const addSpy = jest.spyOn(button.classList, 'add');
       const removeSpy = jest.spyOn(button.classList, 'remove');
 
-      options.flashButtonGreen(button);
+      toggleGPTSection(true);
       expect(addSpy).toHaveBeenCalledWith('flash-success');
 
       setTimeout(() => {
@@ -376,7 +378,7 @@ describe('options.js core functions', () => {
       const removeSpy = jest.spyOn(notif.classList, 'remove');
       const addSpy = jest.spyOn(notif.classList, 'add');
 
-      options.showUINotification('Test message');
+      fetchAnki('showUINotification', 'Test message');
       expect(notif.textContent).toBe('Test message');
       expect(removeSpy).toHaveBeenCalledWith('show', 'error');
       expect(addSpy).toHaveBeenCalledWith('show');
@@ -392,13 +394,13 @@ describe('options.js core functions', () => {
       const notif = document.getElementById('notification');
       const addSpy = jest.spyOn(notif.classList, 'add');
 
-      options.showUINotification('Error message', 'error');
+      fetchAnki('showUINotification', 'Error message', 'error');
       expect(addSpy).toHaveBeenCalledWith('error');
     });
 
     test('showUINotification handles missing element', () => {
       document.body.innerHTML = '<div></div>';
-      expect(() => options.showUINotification('Test')).not.toThrow();
+      expect(() => fetchAnki('showUINotification', 'Test')).not.toThrow();
     });
 
     test('updateUIConnectionStatus updates online state', () => {
@@ -407,7 +409,7 @@ describe('options.js core functions', () => {
         <span id="status-text"></span>
       `;
       
-      options.updateUIConnectionStatus(true);
+      fetchAnki('updateUIConnectionStatus', true);
       const bar = document.getElementById('status-bar');
       const text = document.getElementById('status-text');
       
@@ -422,7 +424,7 @@ describe('options.js core functions', () => {
         <span id="status-text"></span>
       `;
       
-      options.updateUIConnectionStatus(false);
+      fetchAnki('updateUIConnectionStatus', false);
       const bar = document.getElementById('status-bar');
       const text = document.getElementById('status-text');
       
@@ -433,7 +435,7 @@ describe('options.js core functions', () => {
 
     test('updateUIConnectionStatus handles missing elements', () => {
       document.body.innerHTML = '<div></div>';
-      expect(() => options.updateUIConnectionStatus(true)).not.toThrow();
+      expect(() => fetchAnki('updateUIConnectionStatus', true)).not.toThrow();
     });
   });
 
@@ -448,7 +450,7 @@ describe('options.js core functions', () => {
         <span id="history-count"></span>
       `;
 
-      await options.refreshPromptHistory();
+      await fetchAnki('refreshPromptHistory');
       
       const historyList = document.getElementById('history-list');
       const historyCount = document.getElementById('history-count');
@@ -486,7 +488,7 @@ describe('options.js core functions', () => {
         <span id="history-count"></span>
       `;
 
-      await options.refreshPromptHistory();
+      await fetchAnki('refreshPromptHistory');
       
       const historyList = document.getElementById('history-list');
       const historyCount = document.getElementById('history-count');
@@ -508,7 +510,7 @@ describe('options.js core functions', () => {
         <span id="history-count"></span>
       `;
 
-      await options.refreshPromptHistory();
+      await fetchAnki('refreshPromptHistory');
       
       const historyList = document.getElementById('history-list');
       expect(historyList.innerHTML).toContain('Error loading history');
@@ -516,7 +518,7 @@ describe('options.js core functions', () => {
 
     test('refreshPromptHistory handles missing DOM elements', async () => {
       document.body.innerHTML = '<div></div>';
-      await expect(options.refreshPromptHistory()).resolves.not.toThrow();
+      await expect(fetchAnki('refreshPromptHistory')).resolves.not.toThrow();
     });
   });
 
@@ -530,7 +532,7 @@ describe('options.js core functions', () => {
       });
 
       const newClip = { id: 2, text: 'test' };
-      await options.queueClip(newClip);
+      await fetchAnki('queueClip', newClip);
 
       expect(global.chrome.storage.local.set).toHaveBeenCalledWith({
         pendingClips: [{ id: 1 }, { id: 2, text: 'test' }]
@@ -546,7 +548,7 @@ describe('options.js core functions', () => {
       });
 
       const newClip = { id: 1, text: 'test' };
-      await options.queueClip(newClip);
+      await fetchAnki('queueClip', newClip);
 
       expect(global.chrome.storage.local.set).toHaveBeenCalledWith({
         pendingClips: [{ id: 1, text: 'test' }]

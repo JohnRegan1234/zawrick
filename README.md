@@ -4,6 +4,30 @@
 
 ---
 
+## 🆕 Version 1.8 (2024-07)
+
+### Major Changes
+- **Enhanced Model Selection**: Added support for multiple GPT models:
+  - GPT-3.5 Turbo
+  - GPT-4
+  - GPT-4.5 Turbo
+  - Easy model switching in the options page
+- **UI Improvements**: 
+  - Completely redesigned options page with modern, intuitive interface
+  - Streamlined card review interface
+  - Better visual feedback during card generation
+  - Improved error messages and notifications
+  - Enhanced dark mode support
+- **Enhanced PDF Support**: Improved PDF text extraction with better handling of complex layouts and formatting
+- **Performance Optimization**: Reduced memory usage and improved response times for card generation
+- **Bug Fixes**:
+  - Fixed issues with PDF card auto-saving
+  - Resolved dark mode display inconsistencies
+  - Fixed prompt history refresh issues
+  - Addressed various UI glitches and edge cases
+
+---
+
 ## 🆕 Version 1.7 (2024-06)
 
 ### Major Changes

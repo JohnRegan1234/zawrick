@@ -1,14 +1,13 @@
 /**
- * Test Suite for Options.js Utility Functions
- * 
- * This file tests core utility functions extracted from options.js
+ * Test Suite for Options Core Utility Functions
+ * This file tests core utility functions from the options/core directory
  * Run with: npm test -- tests/options-utils.test.js
  */
 
 // Add helper at the top
 const getCrypto = () => (typeof global !== 'undefined' && global.crypto ? global.crypto : (typeof window !== 'undefined' && window.crypto ? window.crypto : undefined));
 
-describe('Options.js Utility Functions', () => {
+describe('Options Core Utility Functions', () => {
   
   describe('getUniquePromptLabel', () => {
     // Extract the function for testing

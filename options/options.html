@@ -6,16 +6,31 @@
     <title>Zawrick Options</title>
     <!-- Remove all <style> blocks and use only the external CSS file -->
     <link rel="stylesheet" href="options.css">
+    <link rel="stylesheet" href="styles/modal.css">
 </head>
 
 <body>
+    <!-- Modal Dialog -->
+    <div class="modal" role="dialog" aria-hidden="true" hidden>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title"></h2>
+                <button class="modal-close" aria-label="Close dialog">×</button>
+            </div>
+            <div class="modal-body"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-action="cancel">Cancel</button>
+                <button class="btn btn-primary" data-action="confirm">Confirm</button>
+            </div>
+        </div>
+    </div>
 
     <div class="header">
         <div class="brand-left">
             <img src="../icons/icon64.png" alt="Zawrick Icon" />
             <h1>Zawrick</h1>
         </div>
-        <span class="version">v1.6</span>
+        <span class="version">v1.8</span>
     </div>
 
     <!-- Inline notification banner -->
@@ -24,8 +39,12 @@
     <!-- Status Bar -->
     <div id="status-bar" class="status-bar">
         <div class="status-indicator"></div>
-        <span id="status-text"></span>
-        <button class="refresh-btn" id="refresh-status">↻</button>
+        <div class="status-text" id="status-text">Checking connection...</div>
+        <button class="refresh-btn" id="refresh-status" aria-label="Refresh connection status">
+            <svg class="refresh-icon" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg">
+                <path d="m23.8995816 10.3992354c0 .1000066-.1004184.1000066-.1004184.2000132 0 0 0 .1000066-.1004184.1000066-.1004184.1000066-.2008369.2000132-.3012553.2000132-.1004184.1000066-.3012552.1000066-.4016736.1000066h-6.0251046c-.6025105 0-1.0041841-.4000264-1.0041841-1.00006592 0-.60003954.4016736-1.00006591 1.0041841-1.00006591h3.5146443l-2.8117154-2.60017136c-.9037657-.90005932-1.9079498-1.50009886-3.0125523-1.90012523-2.0083682-.70004614-4.2175733-.60003954-6.12552305.30001977-2.0083682.90005932-3.41422594 2.50016478-4.11715481 4.5002966-.20083682.50003295-.80334728.80005275-1.30543933.60003954-.50209205-.10000659-.80334728-.70004613-.60251046-1.20007909.90376569-2.60017136 2.71129707-4.60030318 5.12133891-5.70037568 2.41004184-1.20007909 5.12133894-1.30008569 7.63179914-.40002637 1.4058578.50003296 2.7112971 1.30008569 3.7154812 2.40015819l3.0125523 2.70017795v-3.70024386c0-.60003955.4016736-1.00006591 1.0041841-1.00006591s1.0041841.40002636 1.0041841 1.00006591v6.00039545.10000662c0 .1000066 0 .2000132-.1004184.3000197zm-3.1129707 3.7002439c-.5020921-.2000132-1.1046025.1000066-1.3054394.6000396-.4016736 1.1000725-1.0041841 2.200145-1.9079497 3.0001977-1.4058578 1.5000989-3.5146444 2.3001516-5.623431 2.3001516-2.10878662 0-4.11715482-.8000527-5.72384938-2.4001582l-2.81171548-2.6001714h3.51464435c.60251046 0 1.0041841-.4000263 1.0041841-1.0000659 0-.6000395-.40167364-1.0000659-1.0041841-1.0000659h-6.0251046c-.10041841 0-.10041841 0-.20083682 0s-.10041841 0-.20083682 0c0 0-.10041841 0-.10041841.1000066-.10041841 0-.20083682.1000066-.20083682.2000132s0 .1000066-.10041841.1000066c0 .1000066-.10041841.1000066-.10041841.2000132v.2000131.1000066 6.0003955c0 .6000395.40167364 1.0000659 1.0041841 1.0000659s1.0041841-.4000264 1.0041841-1.0000659v-3.7002439l2.91213389 2.8001846c1.80753138 2.0001318 4.31799163 3.0001977 7.02928871 3.0001977 2.7112971 0 5.2217573-1.0000659 7.1297071-2.9001911 1.0041841-1.0000659 1.9079498-2.3001516 2.4100418-3.7002439.1004185-.6000395-.2008368-1.2000791-.7029288-1.3000857z" transform=""/>
+            </svg>
+        </button>
     </div>
     <div class="help-box error" id="status-help">
         Anki isn't running or
@@ -34,7 +53,7 @@
     </div>
 
     <!-- Pending cards with tooltip -->
-    <div class="pending-cards">
+    <div class="pending-cards" style="display: none;">
         <div class="muted-text" id="pending-summary">
             <span id="pending-count" class="pending-count">0</span> new cards pending sync to Anki
         </div>
@@ -104,6 +123,15 @@
                     </div>
 
                     <div class="form-group">
+                        <label class="form-label" for="gpt-model-select">GPT Model</label>
+                        <select id="gpt-model-select" class="form-select">
+                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                            <option value="gpt-4">GPT-4</option>
+                            <option value="gpt-4-turbo-preview">GPT-4 Turbo</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
                         <label class="form-label" for="prompt-select">Saved Prompts</label>
                         <select id="prompt-select" class="form-select"></select>
                     </div>
@@ -153,16 +181,12 @@
             </div>
             <div class="history-list" id="history-list">
               <!-- Example entry structure -->
-              <div class="history-entry">
-                <div class="history-header">
+              <div class="review-card">
+                <div class="review-card-header">
                   <!-- ...header content... -->
                 </div>
-                <div class="history-details">
-                  <div class="history-detail-row">
-                    <div class="history-detail-label">Prompt:</div>
-                    <!-- ...prompt content... -->
-                  </div>
-                  <!-- ...other detail rows... -->
+                <div class="review-card-body">
+                  <!-- ...body content... -->
                 </div>
               </div>
               <!-- ...repeat for each entry... -->
@@ -189,14 +213,30 @@
         <div class="section-body-wrapper">
             <div class="section-body" id="pdf-review-body">
                 <div class="section-body-content">
-                    <div class="history-controls">
-                        <button id="refresh-pdf-review-list-btn" class="btn btn-secondary">Refresh List</button>
+                    <div class="pdf-review-controls">
+                        <button id="refresh-pdf-review-list-btn" class="refresh-btn" aria-label="Refresh PDF review list">
+                            <svg class="refresh-icon" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg">
+                                <path d="m23.8995816 10.3992354c0 .1000066-.1004184.1000066-.1004184.2000132 0 0 0 .1000066-.1004184.1000066-.1004184.1000066-.2008369.2000132-.3012553.2000132-.1004184.1000066-.3012552.1000066-.4016736.1000066h-6.0251046c-.6025105 0-1.0041841-.4000264-1.0041841-1.00006592 0-.60003954.4016736-1.00006591 1.0041841-1.00006591h3.5146443l-2.8117154-2.60017136c-.9037657-.90005932-1.9079498-1.50009886-3.0125523-1.90012523-2.0083682-.70004614-4.2175733-.60003954-6.12552305.30001977-2.0083682.90005932-3.41422594 2.50016478-4.11715481 4.5002966-.20083682.50003295-.80334728.80005275-1.30543933.60003954-.50209205-.10000659-.80334728-.70004613-.60251046-1.20007909.90376569-2.60017136 2.71129707-4.60030318 5.12133891-5.70037568 2.41004184-1.20007909 5.12133894-1.30008569 7.63179914-.40002637 1.4058578.50003296 2.7112971 1.30008569 3.7154812 2.40015819l3.0125523 2.70017795v-3.70024386c0-.60003955.4016736-1.00006591 1.0041841-1.00006591s1.0041841.40002636 1.0041841 1.00006591v6.00039545.10000662c0 .1000066 0 .2000132-.1004184.3000197zm-3.1129707 3.7002439c-.5020921-.2000132-1.1046025.1000066-1.3054394.6000396-.4016736 1.1000725-1.0041841 2.200145-1.9079497 3.0001977-1.4058578 1.5000989-3.5146444 2.3001516-5.623431 2.3001516-2.10878662 0-4.11715482-.8000527-5.72384938-2.4001582l-2.81171548-2.6001714h3.51464435c.60251046 0 1.0041841-.4000263 1.0041841-1.0000659 0-.6000395-.40167364-1.0000659-1.0041841-1.0000659h-6.0251046c-.10041841 0-.10041841 0-.20083682 0s-.10041841 0-.20083682 0c0 0-.10041841 0-.10041841.1000066-.10041841 0-.20083682.1000066-.20083682.2000132s0 .1000066-.10041841.1000066c0 .1000066-.10041841.1000066-.10041841.2000132v.2000131.1000066 6.0003955c0 .6000395.40167364 1.0000659 1.0041841 1.0000659s1.0041841-.4000264 1.0041841-1.0000659v-3.7002439l2.91213389 2.8001846c1.80753138 2.0001318 4.31799163 3.0001977 7.02928871 3.0001977 2.7112971 0 5.2217573-1.0000659 7.1297071-2.9001911 1.0041841-1.0000659 1.9079498-2.3001516 2.4100418-3.7002439.1004185-.6000395-.2008368-1.2000791-.7029288-1.3000857z" transform=""/>
+                            </svg>
+                        </button>
+                        <button id="pdf-help-btn" class="help-btn" aria-label="Show PDF help information">
+                            <svg class="help-icon" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/>
+                            </svg>
+                            <svg class="close-icon" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg" style="display: none;">
+                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                            </svg>
+                        </button>
                         <button id="clear-pdf-history" class="btn btn-secondary error">Clear All PDF Cards</button>
-                        <span class="history-count count-badge" id="pdf-review-count">0 cards for review</span>
                     </div>
-                    <p class="help-text" style="margin-bottom: var(--gap-sm);">
+                    <div class="pdf-review-counter">
+                        <span class="count-badge" id="pdf-review-count">0 cards for review</span>
+                    </div>
+                    <div class="pdf-review-status">
+                    </div>
+                    <div id="pdf-help-text" class="help-text" style="display: none; margin-bottom: var(--gap-sm);">
                         Note: PDF-sourced cards appear here for review if the global "Always review cards before saving" setting (in GPT Settings above) is enabled, or if automatic processing encountered an issue. If that setting is disabled and processing is successful, PDF cards are sent directly to Anki (or the sync queue) with a system notification.
-                    </p>
+                    </div>
                     <div id="pdf-review-list" class="history-list">
                         <div style="text-align: center; color: var(--muted); padding: 20px;">Loading PDF cards for review...</div>
                     </div>
@@ -207,7 +247,7 @@
 
     <!-- Move the minimal GPT info block to just above the footer, single line, smaller font -->
     <div class="gpt-info-minimal-inline">
-        <span class="gpt-model-pill-minimal-inline">gpt-3.5-turbo</span>
+        <span class="gpt-model-pill-minimal-inline" id="gpt-model-display">Model: gpt-3.5-turbo</span>
         <span class="gpt-info-separator">|</span>
         <a href="https://platform.openai.com/api-keys" class="gpt-key-link-minimal-inline" target="_blank">Get an OpenAI API key</a>
     </div>
@@ -217,25 +257,7 @@
       <button type="button" id="reset-settings" class="footer-link">Reset settings</button>
     </div>
 
-    <script src="../ui/modal.js"></script>
-    <script type="module" src="../options.js" defer></script>
-    <script type="module" src="../options_ui.js" defer></script>
-
-    <!-- Modal Dialog -->
-    <div id="modal" class="modal" role="dialog" aria-labelledby="modal-title" aria-modal="true" hidden>
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="modal-title" class="modal-title"></h3>
-                <button class="modal-close" aria-label="Close dialog">×</button>
-            </div>
-            <div class="modal-body">
-                <p id="modal-message"></p>
-            </div>
-            <div class="modal-footer">
-                <button data-action="cancel" class="btn btn-secondary">Cancel</button>
-                <button data-action="confirm" class="btn btn-primary">Confirm</button>
-            </div>
-        </div>
-    </div>
+    <script type="module" src="modal.js"></script>
+    <script type="module" src="index.js" defer></script>
 </body>
 </html>

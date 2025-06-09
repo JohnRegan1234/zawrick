@@ -1,3 +1,4 @@
+
 const notificationTimeouts = new Map();
 
 /**
@@ -6,7 +7,7 @@ const notificationTimeouts = new Map();
  * @param {string} [type] - The type of notification (e.g., 'error').
  * @param {Document} documentContext - The document object to use.
  */
-function showUINotification(message, type = '', documentContext = document) {
+export function showUINotification(message, type = '', documentContext = document) {
     console.log('[options_ui_logic.js][showUINotification] Called with message:', message, 'type:', type);
     const notif = documentContext.getElementById('notification');
     console.log('[options_ui_logic.js][showUINotification] notif element:', notif);
@@ -36,7 +37,7 @@ function showUINotification(message, type = '', documentContext = document) {
  * Briefly flashes a button green to indicate a successful action.
  * @param {HTMLElement} buttonElement - The button HTML element to flash.
  */
-function flashButtonGreen(buttonElement) {
+export function flashButtonGreen(buttonElement) {
   if (!buttonElement || typeof buttonElement.classList === 'undefined') {
     console.warn('[flashButtonGreen] Invalid button element provided:', buttonElement);
     return;
@@ -52,7 +53,7 @@ function flashButtonGreen(buttonElement) {
  * @param {boolean} online - True if connected, false otherwise.
  * @param {Document} documentContext - The document object to use.
  */
-function updateUIConnectionStatus(online, documentContext = document) {
+export function updateUIConnectionStatus(online, documentContext = document) {
     const bar = documentContext.getElementById('status-bar');
     const statusTextEl = documentContext.getElementById('status-text');
     if (!bar || !statusTextEl) return;
@@ -73,17 +74,9 @@ function updateUIConnectionStatus(online, documentContext = document) {
 }
 
 // Function to clear timeouts, useful for testing
-function clearAllNotificationTimeouts() {
+export function clearAllNotificationTimeouts() {
     for (const timeoutId of notificationTimeouts.values()) {
         clearTimeout(timeoutId);
     }
     notificationTimeouts.clear();
-}
-
-// Export for ES6 modules
-export { showUINotification, flashButtonGreen, updateUIConnectionStatus, clearAllNotificationTimeouts };
-
-// Export for CommonJS (Node.js/Jest)
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { showUINotification, flashButtonGreen, updateUIConnectionStatus, clearAllNotificationTimeouts };
 }

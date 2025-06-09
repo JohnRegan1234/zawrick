@@ -1,6 +1,6 @@
 {
   "name": "zawrick",
-  "version": "1.6.0",
+  "version": "1.8.0",
   "description": "**Zawrick** is a powerful browser extension that transforms web and PDF text into Anki flashcards with AI-powered question generation. Highlight text anywhere in your browser and instantly create high-quality flashcards for your studies.",
   "main": "ankiProvider.js",
   "directories": {
